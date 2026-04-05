@@ -1,0 +1,63 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Validate Grafana dashboard (JSON only)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Get-Content -Raw grafana/metrics.json | ConvertFrom-Json -ErrorAction Stop | Out-Null; Write-Output 'PASS: JSON syntax is valid (grafana/metrics.json).'"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Grafana realtime (JSON only)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Get-Content -Raw grafana/realtime.json | ConvertFrom-Json -ErrorAction Stop | Out-Null; Write-Output 'PASS: JSON syntax is valid (grafana/realtime.json).'"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Grafana dashboard (CUE)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts/validate-grafana-dashboard.ps1"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate Grafana realtime (CUE)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts/validate-grafana-dashboard.ps1",
+        "-DashboardPath",
+        "grafana/realtime.json"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

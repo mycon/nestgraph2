@@ -1,0 +1,27 @@
+services:
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nest_collector
+    init: true
+    restart: unless-stopped
+    command: ["python", "-m", "src.main"]
+    environment:
+      - CONFIG_PATH=/app/config/config.json
+      - LIFECHECK_FILE=${LIFECHECK_FILE:-/tmp/nestgraph2.lifecheck}
+      - LIFECHECK_INTERVAL_SECONDS=${LIFECHECK_INTERVAL_SECONDS:-3600}
+    secrets:
+      - nest_key
+    volumes:
+      # Persist configuration and token storage in a Docker volume
+      - collector_config:/app/config
+
+secrets:
+  nest_key:
+    environment: NEST_TOKEN_ENCRYPTION_KEY
+
+volumes:
+  collector_config:
+
+

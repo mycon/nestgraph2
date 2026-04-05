@@ -1,0 +1,22 @@
+.git
+.github
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+tests/js_dump
+*.log
+config/*
+influxdb-data
+grafana-data
+
+# Local environment variables
+.env
+.env.*
+!.env.example

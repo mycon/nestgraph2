@@ -1,0 +1,8 @@
+requests>=2.31.0
+influxdb-client>=1.40.0
+APScheduler>=3.10.4
+pytz>=2024.1
+protobuf>=6.31.1,<7.0.0
+grpcio-tools>=1.80.0
+playwright>=1.53.0
+cryptography>=42.0.0

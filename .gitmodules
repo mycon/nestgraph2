@@ -1,0 +1,3 @@
+[submodule "nest-observe"]
+	path = nest-observe
+	url = https://github.com/mycon/nest-observe.git

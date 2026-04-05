@@ -1,0 +1,380 @@
+// Supplemental Nest HVAC protobuf definitions.
+// Field numbers verified against SDK JS bundle sdk-421f7ba4a82b319d562a.js.
+//
+// NOTE: HvacControlTrait, FanControlTrait, EcoModeStateTrait, EcoModeTrait are
+// defined in nest-observe/protobuf/pb/nest/trait/hvac.proto — do NOT duplicate
+// them here to avoid protoc "duplicate message" errors.
+
+syntax = "proto3";
+package nest.trait.hvac;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "nest/trait/hvac.proto";
+
+// ── HvacControl.Temperature ───────────────────────────────────────────────────
+// Shared helper used by EcoModeTrait and SetPointScheduleSettingsTrait.
+// { float value = 1 }  — Celsius temperature value.
+message HvacControl {
+  message Temperature {
+    float value = 1;  // Celsius
+  }
+
+  message TemperatureThreshold {
+    Temperature value = 1;
+    bool enabled = 2;
+  }
+}
+
+message SafetyShutoffCapabilitiesTrait {
+  bool smoke_shutoff_supported = 1;
+  bool compressor_heads_up_supported = 2;
+}
+
+message AirwaveTrait {
+  bool fan_cooling_active = 1;
+  bool fan_cooling_readiness = 2;
+}
+
+message AirwaveSettingsTrait {
+  bool fan_cooling_enabled = 1;
+}
+
+message HeatPumpControlTrait {
+  bool heat_pump_ready = 1;
+  bool heat_pump_setback_active = 2;
+}
+
+enum HeatPumpSavingsMode {
+  HEAT_PUMP_SAVINGS_MODE_UNSPECIFIED = 0;
+  HEAT_PUMP_SAVINGS_MODE_MAX_SAVINGS = 1;
+  HEAT_PUMP_SAVINGS_MODE_BALANCED = 2;
+  HEAT_PUMP_SAVINGS_MODE_MAX_COMFORT = 3;
+  HEAT_PUMP_SAVINGS_MODE_OFF = 4;
+}
+
+message HeatPumpControlSettingsTrait {
+  HvacControl.TemperatureThreshold heat_pump_aux_threshold = 1;
+  HvacControl.TemperatureThreshold heat_pump_comp_threshold = 2;
+  HeatPumpSavingsMode heat_pump_savings_mode = 3;
+  google.protobuf.FloatValue aux_min_delta = 4;
+  google.protobuf.Duration aux_min_delay = 5;
+  google.protobuf.Duration aux_upstage_threshold = 6;
+  google.protobuf.Duration dual_fuel_changeover_threshold = 7;
+}
+
+enum PreconditioningState {
+  PRECONDITIONING_STATE_UNSPECIFIED = 0;
+  PRECONDITIONING_STATE_INACTIVE = 1;
+  PRECONDITIONING_STATE_ACTIVE = 2;
+}
+
+message PreconditioningTrait {
+  bool preconditioning_active = 1;
+  PreconditioningState state = 2;
+}
+
+message PreconditioningSettingsTrait {
+  bool preconditioning_enabled = 1;
+  google.protobuf.Duration max_nighttime_seconds = 2;
+  bool heat_preconditioning_enabled = 3;
+  bool cool_preconditioning_enabled = 4;
+  bool return_home_preconditioning_enabled = 5;
+}
+
+message SafetyShutoffSettingsTrait {
+  bool hvac_co_safety_shutoff_enabled = 1;
+  bool hvac_smoke_safety_shutoff_enabled = 2;
+  bool compressor_heads_up_enabled = 3;
+}
+
+enum ScheduleOffsetState {
+  SCHEDULE_OFFSET_STATE_UNSPECIFIED = 0;
+  SCHEDULE_OFFSET_STATE_INACTIVE = 1;
+  SCHEDULE_OFFSET_STATE_ACTIVE = 2;
+}
+
+enum ScheduleOffsetReason {
+  SCHEDULE_OFFSET_REASON_UNSPECIFIED = 0;
+  SCHEDULE_OFFSET_REASON_NONE = 1;
+  SCHEDULE_OFFSET_REASON_LEAF = 2;
+  SCHEDULE_OFFSET_REASON_SYSTEM = 3;
+}
+
+message ScheduleOffsetTrait {
+  bool is_feature_supported = 1;
+  ScheduleOffsetState state = 2;
+  ScheduleOffsetReason reason = 3;
+  google.protobuf.Timestamp last_update_time = 4;
+}
+
+message ScheduleOffsetSettingsTrait {
+  message Offset {
+    bytes offset_settings = 1;
+    bytes metadata = 2;
+    bytes event_metadata = 3;
+  }
+  Offset cool_offset = 1;
+  Offset heat_offset = 2;
+}
+
+message ScheduleHoldTrait {
+  int32 state = 1;
+  int32 reason = 2;
+  google.protobuf.Timestamp last_update_time = 3;
+}
+
+message FanControlCapabilitiesTrait {
+  int32 max_available_speed = 1;
+  bool supports_indefinite_timer = 2;
+  bool supports_timer_in_off_mode = 3;
+  google.protobuf.Duration max_timer_duration = 4;
+}
+
+message EquipmentSettingsTrait {
+  int32 heat_stage1_delivery = 1;
+  int32 heat_stage2_delivery = 2;
+  int32 heat_stage3_delivery = 3;
+  int32 heat_stage1_source = 4;
+  int32 heat_stage2_source = 5;
+  int32 heat_stage3_source = 6;
+  int32 cooling_stage1_delivery = 7;
+  int32 cooling_stage2_delivery = 8;
+  int32 cooling_stage3_delivery = 9;
+  int32 cooling_stage1_source = 10;
+  int32 cooling_stage2_source = 11;
+  int32 cooling_stage3_source = 12;
+  int32 alt_heat_stage1_delivery = 13;
+  int32 alt_heat_stage2_delivery = 14;
+  int32 alt_heat_stage1_source = 15;
+  int32 alt_heat_stage2_source = 16;
+  int32 aux_heat_stage1_delivery = 17;
+  int32 aux_heat_stage1_source = 18;
+  int32 emergency_heat_delivery = 19;
+  int32 emergency_heat_source = 20;
+  int32 star_type = 21;
+  int32 y2_type = 22;
+  int32 dehumidifier_fan_activation = 23;
+  int32 dehumidifier_orientation_selected = 24;
+  int32 dehumidifier_type = 25;
+  int32 humidifier_fan_activation = 26;
+  int32 humidifier_type = 27;
+  int32 dual_fuel_selected = 28;
+  Float_Indirect dual_fuel_breakpoint = 29;
+  int32 dual_fuel_breakpoint_override = 30;
+  int32 ob_orientation = 31;
+  int32 ob_persistence = 32;
+  int32 boiler_type = 33;
+  Float_Indirect boiler_supply_temperature = 34;
+  bool activate_fan_if_heat_source_is_gas = 35;
+  int32 ventilator_type = 36;
+  bool ventilator_requires_fan_activation = 37;
+  int32 aq_wire_type = 38;
+  google.protobuf.Duration compressor_min_cycle_time = 39;
+  google.protobuf.Duration compressor_lockout = 41;
+  google.protobuf.Duration heat_min_cycle_time = 42;
+}
+
+// ── SetPointScheduleSettingsTrait ─────────────────────────────────────────────
+// Required by TargetTemperatureSettingsTrait (field 1 references TemperatureSetPoint).
+// Field numbers verified against SDK sdk-421f7ba4a82b319d562a.js.
+//
+// TemperatureSetPoint fields:
+//   1 = SetPointScheduleType (enum)
+//   2 = DayOfWeek (enum, not decoded)
+//   3 = seconds_in_day (uint32)
+//   4 = heating_target (HvacControl.Temperature)
+//   5 = cooling_target (HvacControl.Temperature)
+//   6 = current_actor_info  (HvacActorStruct, not decoded)
+//   7 = original_actor_info (HvacActorStruct, not decoded)
+message SetPointScheduleSettingsTrait {
+  message TemperatureSetPoint {
+    SetPointScheduleType    setpoint_type  = 1;
+    // DayOfWeek            day_of_week    = 2;  (not decoded)
+    uint32                  seconds_in_day = 3;
+    HvacControl.Temperature heating_target = 4;
+    HvacControl.Temperature cooling_target = 5;
+    // HvacActorStruct current_actor_info  = 6;  (not decoded)
+    // HvacActorStruct original_actor_info = 7;  (not decoded)
+  }
+
+  enum SetPointScheduleType {
+    SET_POINT_SCHEDULE_TYPE_UNSPECIFIED = 0;
+    SET_POINT_SCHEDULE_TYPE_HEAT        = 1;
+    SET_POINT_SCHEDULE_TYPE_COOL        = 2;
+    SET_POINT_SCHEDULE_TYPE_RANGE       = 3;
+  }
+
+  string name = 1;
+  SetPointScheduleType type = 2;
+  map<string, TemperatureSetPoint> setpoints_map = 3;
+}
+
+// ── TargetTemperatureSettingsTrait ────────────────────────────────────────────
+// User-configured target setpoints (independent of eco mode).
+// Field numbers verified against SDK sdk-421f7ba4a82b319d562a.js.
+//   field 1 = SetPointScheduleSettingsTrait.TemperatureSetPoint
+//   field 2 = google.protobuf.BoolValue (enabled)
+message TargetTemperatureSettingsTrait {
+  SetPointScheduleSettingsTrait.TemperatureSetPoint target_temperature = 1;
+  google.protobuf.BoolValue                        enabled            = 2;
+}
+
+message InstallationSettingsTrait {
+  bool oob_wifi_completed = 1;
+  bool oob_home_info_completed = 2;
+  bool oob_where_completed = 3;
+  bool oob_wires_completed = 4;
+  bool oob_temp_completed = 5;
+  bool oob_test_completed = 6;
+  bool oob_summary_completed = 7;
+  bool oob_startup_completed = 8;
+  google.protobuf.StringValue pro_id = 9;
+}
+
+message WiringTrait {
+  repeated int32 connections_mechanical = 1;
+  repeated int32 connections_electrical = 2;
+  int32 pin_c_description = 3;
+  int32 pin_g_description = 4;
+  int32 pin_ob_description = 5;
+  int32 pin_rc_description = 6;
+  int32 pin_rh_description = 7;
+  int32 pin_star_description = 8;
+  int32 pin_w1_description = 9;
+  int32 pin_w2_aux_description = 10;
+  int32 pin_y1_description = 11;
+  int32 pin_y2_description = 12;
+  string wiring_error = 13;
+  google.protobuf.Timestamp wiring_error_timestamp = 14;
+  int32 pin_aqplus_description = 15;
+  int32 pin_aqminus_description = 16;
+}
+
+message SeasonalSavingsSettingsTrait {
+  message SeasonalSavingsStage {}
+
+  string event_guid = 1;
+  int32 set_point_type = 2;
+  google.protobuf.Timestamp qual_start_time_local = 3;
+  google.protobuf.Timestamp qual_stop_time_local = 4;
+  uint32 afterglow_seconds = 5;
+  uint32 paused_expiration_seconds = 6;
+  bool force_ignore_blackout_times = 7;
+  map<uint32, SeasonalSavingsStage> stages = 8;
+  google.protobuf.StringValue partner_name = 9;
+  int32 season = 10;
+  string campaign_id = 11;
+  string debug_name = 12;
+  string rts_state = 13;
+  int64 rts_actual_results_stage_index = 14;
+  string rts_requested_action = 15;
+  string rts_stop_reason = 16;
+  string rts_version = 17;
+  string rts_type = 18;
+}
+
+message SeasonalSavingsTrait {
+  string event_guid = 1;
+  int32 state = 2;
+  int32 stop_reason = 3;
+  int32 schedule_mode = 4;
+  google.protobuf.Timestamp predicted_completion_time = 5;
+  google.protobuf.StringValue partner_name = 6;
+  google.protobuf.Timestamp predicted_expiration_time_utc = 7;
+}
+
+message LeafTrait {
+  bool active = 1;
+  HvacControl.Temperature eco_threshold_heat = 2;
+  HvacControl.Temperature eco_threshold_cool = 3;
+  HvacControl.Temperature setpoint_threshold_heat = 4;
+  HvacControl.Temperature setpoint_threshold_cool = 5;
+  HvacControl.Temperature schedule_delta = 6;
+}
+
+message RemoteComfortSensingStateTrait {
+  message TemperatureSample {
+    float value = 1;
+  }
+
+  message RcsSensorInsight {
+    uint64 sensor_id = 1;
+    int32 temperature_insight = 2;
+    int32 controllability_insight = 3;
+  }
+
+  message RcsSensorStatus {
+    uint64 sensor_id = 1;
+    int32 data_recency = 2;
+    int32 single_sensor_failsafe_status = 3;
+    bool active_sensor = 4;
+  }
+
+  message RcsFailsafeState {
+    int32 start_time_seconds = 1;
+    int32 num_alerts = 2;
+    int32 active_alert = 3;
+  }
+
+  bool rcs_capable = 1;
+  TemperatureSample multi_sensor_temperature = 2;
+  map<uint32, RcsSensorInsight> rcs_sensor_insights = 3;
+  repeated int32 rcs_thermostat_alerts = 4;
+  map<uint32, RcsSensorStatus> rcs_sensor_statuses = 5;
+  RcsFailsafeState rcs_failsafe_state = 6;
+}
+
+message ScheduleHoldSettingsTrait {
+  message HoldSetpoint {}
+  message HoldMetadata {}
+
+  HoldSetpoint hold_setpoint = 1;
+  HoldMetadata hold_metadata = 2;
+  bytes event_metadata = 3;
+}
+
+message FilterReminderTrait {
+  int32 current_filter_reminder_level = 1;
+  google.protobuf.BoolValue filter_replacement_needed = 2;
+  google.protobuf.Duration filter_runtime = 3;
+}
+
+message FilterReminderSettingsTrait {
+  google.protobuf.Timestamp filter_changed_date = 1;
+  google.protobuf.Timestamp filter_changed_set_date = 2;
+  bool filter_reminder_enabled = 3;
+  google.protobuf.Duration filter_replacement_threshold = 4;
+}
+
+message HvacDisplayTrait {
+  bool ignore_hvac_staging = 1;
+  repeated string thermostat_state = 2;
+}
+
+message HumidityControlSettingsTrait {
+  message HumidityThreshold {
+    uint32 value = 1;
+  }
+
+  HumidityThreshold target_humidity = 1;
+  bool quiet_times_enabled = 2;
+  uint32 quiet_start_seconds_in_day = 3;
+  uint32 quiet_end_seconds_in_day = 4;
+  HumidityThreshold humidifier_target_humidity = 5;
+  HumidityThreshold dehumidifier_target_humidity = 6;
+}
+
+message SafetyTemperatureSettingsTrait {
+  HvacControl.TemperatureThreshold lower_safety_temp = 1;
+  HvacControl.TemperatureThreshold upper_safety_temp = 2;
+}
+
+message TemperatureLockSettingsTrait {
+  bool enabled = 1;
+  HvacControl.Temperature temperature_high = 2;
+  HvacControl.Temperature temperature_low = 3;
+  string pin_hash = 4;
+}
+

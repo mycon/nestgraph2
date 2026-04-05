@@ -1,0 +1,48 @@
+# Config (real — contains credentials; never commit)
+config/config.json
+config/device_index.json
+config/tokens.json
+
+# HAR files
+*.har
+
+# Legacy env files (no longer used, kept here as precaution)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/js_dump/*.js
+tests/js_dump/*.txt
+
+# Docker volumes
+influxdb-data/
+grafana-data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log

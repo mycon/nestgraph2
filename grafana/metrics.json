@@ -1,0 +1,2241 @@
+{
+  "annotations": [
+    {
+      "kind": "AnnotationQuery",
+      "spec": {
+        "builtIn": true,
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "query": {
+          "datasource": {
+            "name": "-- Grafana --"
+          },
+          "group": "grafana",
+          "kind": "DataQuery",
+          "spec": {},
+          "version": "v0"
+        }
+      }
+    }
+  ],
+  "cursorSync": "Off",
+  "editable": true,
+  "elements": {
+    "panel-1": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) => r._field == \"min_outdoor_temp_c\" or r._field == \"avg_outdoor_temp_c\" or r._field == \"max_outdoor_temp_c\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> map(fn: (r) => ({ r with _value: if \"${temp_unit}\" == \"F\" then (r._value * 9.0 / 5.0) + 32.0 else r._value }))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])\n  |> group(columns: [\"_field\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_raw}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"weather\")\n  |> filter(fn: (r) => r._field == \"outdoor_temp_c\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({\n      r with\n      _field: \"weather_outdoor_temp_c\",\n      _value: if \"${temp_unit}\" == \"F\" then (r._value * 9.0 / 5.0) + 32.0 else r._value\n  }))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_raw}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermostat\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r._field == \"current_temp_c\")\n  |> map(fn: (r) => ({\n      r with\n      _field: \"current_temperature\",\n      _value: if \"${temp_unit}\" == \"F\" then (r._value * 9.0 / 5.0) + 32.0 else r._value\n  }))\n  |> keep(columns: [\"_time\", \"_value\", \"_field\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel provides a comprehensive overview of temperature dynamics. It plots the daily computed outdoor temperature range (minimum, average, and maximum) as distinct series. Overlaid on this is the high-resolution current indoor temperature from the primary thermostat and the raw outdoor temperature from the weather feed. This combined view is essential for correlating indoor temperature fluctuations with both the broader daily outdoor trends and immediate weather changes.",
+        "id": 1,
+        "links": [],
+        "title": "Temperature Overview: Outdoor Daily Range + Indoor/Outdoor Live",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 0,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 35
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "weather_outdoor_temp_c"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Weather Outdoor"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#9467bd",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*max_outdoor_temp_c.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Outdoor Max"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#d62728",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*avg_outdoor_temp_c.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Outdoor Avg"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#2ca02c",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*min_outdoor_temp_c.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Outdoor Min"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#1f77b4",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "current_temperature"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Indroor Current Temp"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#b8860b",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "min",
+                  "max",
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-10": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_raw}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"thermal_resistance\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => \n      r._field == \"r_factor\" or \n      r._field == \"indoor_start_c\" or \n      r._field == \"outdoor_avg_c\"\n  )\n  |> drop(columns: [\"hvac_mode\"]) \n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  \n  |> filter(fn: (r) => exists r.r_factor and exists r.indoor_start_c and exists r.outdoor_avg_c)\n  \n  // CALCULATED MATH FILTER: Compute Delta T early to apply strict thermodynamic filtering\n  |> map(fn: (r) => ({\n      r with\n      delta_t: r.indoor_start_c - r.outdoor_avg_c\n  }))\n  \n  // FIX 1: Ignore low-delta shoulder noise where math breaks down (|Delta T| must be > 4°C)\n  // FIX 2: Lock R-factors to physically possible boundaries (0 to 60)\n  //|> filter(fn: (r) => (r.delta_t > 4.0 or r.delta_t < -4.0))\n  |> filter(fn: (r) => r.r_factor > 0.0 and r.r_factor < 60.0)\n  \n  |> map(fn: (r) => ({\n      _time: r._time,\n      dev_idx: r.dev_idx,\n      delta_t: r.delta_t,\n      r_factor: r.r_factor\n  }))\n  |> group(columns: [\"dev_idx\"])\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel visualizes the thermal performance of the structure by plotting individual thermal resistance (R-Factor) calculations against the temperature difference (ΔT) between inside and outside. Each point represents a single heating or cooling cycle transition. The chart separates observations for heating (positive ΔT) and cooling (negative ΔT) and calculates a running median baseline for each mode. This helps identify the building's effective insulation performance under different thermal load conditions.",
+        "id": 10,
+        "links": [],
+        "title": "R-Factor",
+        "vizConfig": {
+          "group": "nline-plotlyjs-panel",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "options": {
+              "allData": {},
+              "config": {
+                "displayModeBar": true,
+                "responsive": true
+              },
+              "data": [],
+              "imgFormat": "png",
+              "layout": {
+                "font": {
+                  "family": "Inter, Helvetica, Arial, sans-serif"
+                },
+                "margin": {
+                  "b": 0,
+                  "l": 0,
+                  "r": 0,
+                  "t": 0
+                },
+                "title": {
+                  "automargin": true
+                },
+                "xaxis": {
+                  "automargin": true,
+                  "autorange": true,
+                  "type": "date"
+                },
+                "yaxis": {
+                  "automargin": true,
+                  "autorange": true
+                }
+              },
+              "onclick": "",
+              "resScale": 2,
+              "script": "const series = Array.isArray(data?.series) ? data.series : [];\nif (series.length === 0) return { data: [], layout: {} };\n\nconst vectorToArray = (values) => {\n  if (values == null) return [];\n  if (Array.isArray(values)) return values;\n  if (Array.isArray(values.buffer)) return values.buffer;\n  if (typeof values.toArray === 'function') return values.toArray();\n  if (typeof values.length === 'number') {\n    const out = [];\n    for (let i = 0; i < values.length; i += 1) {\n      out.push(typeof values.get === 'function' ? values.get(i) : values[i]);\n    }\n    return out;\n  }\n  return [];\n};\n\nconst calculateMedian = (arr) => {\n  if (arr.length === 0) return null;\n  const sorted = [...arr].sort((a, b) => a - b);\n  const mid = Math.floor(sorted.length / 2);\n  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;\n};\n\nconst calculateStdDev = (arr, mean) => {\n  if (arr.length <= 1) return 0;\n  const variance = arr.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / arr.length;\n  return Math.sqrt(variance);\n};\n\nconst traces = [];\nlet heatingRFactors = [];\nlet coolingRFactors = [];\n\n// Track device label across loops\nlet globalDevLabel = '';\n\nseries.forEach((frame, frameIdx) => {\n  const fields = frame?.fields || [];\n  const fDeltaT = fields.find(f => f.name === 'delta_t');\n  const fRFactor = fields.find(f => f.name === 'r_factor');\n  const fDev = fields.find(f => f.name === 'dev_idx');\n\n  // FIX: Dynamic device label identification matching layout parsing rules\n  const rawDevVals = fDev ? vectorToArray(fDev.values) : [];\n  let devLabel = rawDevVals.length > 0 && rawDevVals[0] != null ? String(rawDevVals[0]) : '';\n  if (!devLabel) {\n    const match = frame.name ? frame.name.match(/dev_idx=[\"']?(\\w+)/) : null;\n    devLabel = match ? match[1] : String(frameIdx);\n  }\n  if (devLabel && !globalDevLabel) globalDevLabel = devLabel;\n\n  if (!fDeltaT || !fRFactor) return;\n\n  const rawDeltaT = vectorToArray(fDeltaT.values);\n  const rawRFactor = vectorToArray(fRFactor.values);\n\n  const deltaT_Heating = [];\n  const rFactor_Heating = [];\n  const deltaT_Cooling = [];\n  const rFactor_Cooling = [];\n\n  for (let i = 0; i < rawDeltaT.length; i++) {\n    const dt = rawDeltaT[i];\n    const rf = rawRFactor[i];\n    if (dt != null && rf != null) {\n      if (dt > 0) {\n        heatingRFactors.push(rf);\n        deltaT_Heating.push(dt);\n        rFactor_Heating.push(rf);\n      } else {\n        coolingRFactors.push(rf);\n        deltaT_Cooling.push(dt);\n        rFactor_Cooling.push(rf);\n      }\n    }\n  }\n\n  // Add Heating Scatter Points\n  if (rFactor_Heating.length > 0) {\n    traces.push({\n      x: deltaT_Heating,\n      y: rFactor_Heating,\n      name: `Dev ${devLabel} | Heat Obs`,\n      type: 'scatter',\n      mode: 'markers',\n      marker: { color: '#ef6c00', size: 6, opacity: 0.5, symbol: 'triangle-up' },\n      hovertemplate: `Heating R-Value: <b>%{y:.2f}</b><extra></extra>`\n    });\n  }\n\n  // Add Cooling Scatter Points\n  if (rFactor_Cooling.length > 0) {\n    traces.push({\n      x: deltaT_Cooling,\n      y: rFactor_Cooling,\n      name: `Dev ${devLabel} | Cool Obs`,\n      type: 'scatter',\n      mode: 'markers',\n      marker: { color: '#1565c0', size: 5.5, opacity: 0.5, symbol: 'circle' },\n      hovertemplate: `Cooling R-Value: <b>%{y:.2f}</b><extra></extra>`\n    });\n  }\n});\n\nconst finalDevStr = globalDevLabel || '0';\n\n// --- HEATING METRICS & SHADING AREA ---\nconst medianHeatingR = calculateMedian(heatingRFactors);\nif (medianHeatingR !== null) {\n  const heatingMean = heatingRFactors.reduce((a, b) => a + b, 0) / heatingRFactors.length;\n  const heatingStdDev = calculateStdDev(heatingRFactors, heatingMean);\n  \n  traces.push({\n    x: [0, 15, 15, 0],\n    y: [\n      medianHeatingR + heatingStdDev, \n      medianHeatingR + heatingStdDev, \n      medianHeatingR - heatingStdDev, \n      medianHeatingR - heatingStdDev\n    ],\n    fill: 'toself',\n    fillcolor: 'rgba(239, 108, 0, 0.08)',\n    line: { color: 'transparent' },\n    name: `Dev ${finalDevStr} | Heat Variance (±${heatingStdDev.toFixed(1)} R)`,\n    type: 'scatter',\n    hoverinfo: 'skip'\n  });\n\n  traces.push({\n    x: [0, 15],\n    y: [medianHeatingR, medianHeatingR],\n    name: `Dev ${finalDevStr} | Heat Baseline R-${medianHeatingR.toFixed(1)}`,\n    type: 'scatter',\n    mode: 'lines',\n    line: { color: '#ef6c00', width: 2.5, dash: 'dashdot' },\n    hovertemplate: `Median Heating R: <b>%{y:.2f}</b><extra></extra>`\n  });\n}\n\n// --- COOLING METRICS & SHADING AREA ---\nconst medianCoolingR = calculateMedian(coolingRFactors);\nif (medianCoolingR !== null) {\n  const coolingMean = coolingRFactors.reduce((a, b) => a + b, 0) / coolingRFactors.length;\n  const coolingStdDev = calculateStdDev(coolingRFactors, coolingMean);\n  \n  traces.push({\n    x: [-15, 0, 0, -15],\n    y: [\n      medianCoolingR + coolingStdDev, \n      medianCoolingR + coolingStdDev, \n      medianCoolingR - coolingStdDev, \n      medianCoolingR - coolingStdDev\n    ],\n    fill: 'toself',\n    fillcolor: 'rgba(21, 101, 192, 0.08)',\n    line: { color: 'transparent' },\n    name: `Dev ${finalDevStr} | Cool Variance (±${coolingStdDev.toFixed(1)} R)`,\n    type: 'scatter',\n    hoverinfo: 'skip'\n  });\n\n  traces.push({\n    x: [-15, 0],\n    y: [medianCoolingR, medianCoolingR],\n    name: `Dev ${finalDevStr} | Cool Baseline R-${medianCoolingR.toFixed(1)}`,\n    type: 'scatter',\n    mode: 'lines',\n    line: { color: '#1565c0', width: 2.5, dash: 'dashdot' },\n    hovertemplate: `Median Cooling R: <b>%{y:.2f}</b><extra></extra>`\n  });\n}\n\nreturn {\n  data: traces,\n  layout: {\n    margin: { l: 60, r: 40, t: 40, b: 60 },\n    hovermode: 'x unified', \n    hoverlabel: {\n      bgcolor: '#111217',\n      bordercolor: '#2c2c35',\n      font: { color: '#cccccc', family: 'Inter, sans-serif', size: 12 }\n    },\n    plot_bgcolor: 'rgba(0,0,0,0)',\n    paper_bgcolor: 'rgba(0,0,0,0)',\n    font: { color: '#cccccc', family: 'Inter, sans-serif' },\n    xaxis: {\n      type: 'linear',\n      title: { text: 'Indoor - Outdoor Temperature Delta (ΔT °C)', font: { size: 12 } },\n      gridcolor: '#222225',\n      zeroline: true,\n      zerolinecolor: '#3e3e42',\n      range: [-15, 15]\n    },\n    yaxis: {\n      type: 'linear',\n      autorange: false,\n      range: [-0.5, 50],\n      title: { text: 'Effective Structural Thermal Resistance (R-Factor)', font: { size: 12 } },\n      gridcolor: '#222225',\n      zeroline: false\n    },\n    legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' }\n  }\n};",
+              "syncTimeRange": false,
+              "timeCol": ""
+            }
+          },
+          "version": "1.8.1"
+        }
+      }
+    },
+    "panel-11": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_raw}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"indoor_dynamics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) =>\n      r._field == \"thermal_recovery_ratio\" or\n      r._field == \"indoor_temp_c\" or\n      r._field == \"outdoor_temp_c\"\n  )\n  |> pivot(rowKey:[\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.thermal_recovery_ratio and exists r.indoor_temp_c and exists r.outdoor_temp_c)\n  \n  // Filter out standby zero-drift noise\n  |> filter(fn: (r) => r.thermal_recovery_ratio > 0.15 and r.thermal_recovery_ratio < 15.0)\n  |> map(fn: (r) => {\n      delta_c = r.indoor_temp_c - r.outdoor_temp_c\n      \n      // FIX: Multiply the ratio back by the raw delta to isolate the actual temperature change rate per hour\n      raw_rate_c = r.thermal_recovery_ratio * (if delta_c < 0.0 then -delta_c else delta_c)\n      \n      // Dynamically scale both axes according to the dashboard unit toggle\n      delta_scaled = if \"${temp_unit}\" == \"F\" then delta_c * 1.8 else delta_c\n      rate_scaled = if \"${temp_unit}\" == \"F\" then raw_rate_c * 1.8 else raw_rate_c\n      \n      return {\n          _time: r._time,\n          dev_idx: r.dev_idx,\n          delta_t: delta_scaled,\n          recovery_rate: rate_scaled\n      }\n  })\n  |> group(columns: [\"dev_idx\"])\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel analyzes the HVAC system's efficiency by plotting the Thermal Recovery Rate (the speed at which the system changes the indoor temperature, in °/hour) against the Indoor-Outdoor temperature delta (ΔT). Each point represents a completed HVAC cycle. The chart fits an independent linear regression model for each selected device, providing a clear trendline of how the system's heating/cooling power changes as the outdoor temperature difference increases. This is a key indicator of HVAC performance and duct efficiency.",
+        "id": 11,
+        "links": [],
+        "title": "Thermal Recovery Ratio",
+        "vizConfig": {
+          "group": "nline-plotlyjs-panel",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "options": {
+              "allData": {},
+              "config": {
+                "displayModeBar": true,
+                "responsive": true
+              },
+              "data": [],
+              "imgFormat": "png",
+              "layout": {
+                "font": {
+                  "family": "Inter, Helvetica, Arial, sans-serif"
+                },
+                "margin": {
+                  "b": 0,
+                  "l": 0,
+                  "r": 0,
+                  "t": 0
+                },
+                "title": {
+                  "automargin": true
+                },
+                "xaxis": {
+                  "automargin": true,
+                  "autorange": true,
+                  "type": "date"
+                },
+                "yaxis": {
+                  "automargin": true,
+                  "autorange": true
+                }
+              },
+              "onclick": "",
+              "resScale": 2,
+              "script": "const series = Array.isArray(data?.series) ? data.series : [];\nif (series.length === 0) return { data: [], layout: {} };\n\nconst vectorToArray = (values) => {\n  if (values == null) return [];\n  if (Array.isArray(values)) return values;\n  if (Array.isArray(values.buffer)) return values.buffer;\n  if (typeof values.toArray === 'function') return values.toArray();\n  if (typeof values.length === 'number') {\n    const out = [];\n    for (let i = 0; i < values.length; i += 1) {\n      out.push(typeof values.get === 'function' ? values.get(i) : values[i]);\n    }\n    return out;\n  }\n  return [];\n};\n\nlet activeUnit = 'C';\nif (typeof variables !== 'undefined' && variables.temp_unit) {\n  activeUnit = typeof variables.temp_unit === 'object' ? String(variables.temp_unit.value || 'C') : String(variables.temp_unit);\n}\n\nconst deviceColors = ['#1565c0', '#2e7d32', '#ef6c00', '#6a1b9a', '#c62828', '#00838f'];\nconst trendColors = ['#d32f2f', '#388e3c', '#f57c00', '#8e24aa', '#e53935', '#0097a7'];\n\nconst traces = [];\n\nseries.forEach((frame, frameIdx) => {\n  const fields = frame?.fields || [];\n  const deltaTFields = fields.filter(f => f.name.startsWith('delta_t'));\n\n  deltaTFields.forEach((fDeltaT) => {\n    const match = fDeltaT.name.match(/\\d+$/);\n    const suffix = match ? match[0] : '';\n    \n    // FIX: Targets the true unweighted recovery field stream\n    const rateName = suffix ? `recovery_rate ${suffix}` : 'recovery_rate';\n    const fRate = fields.find(f => f.name === rateName);\n\n    if (!fRate) return;\n\n    let devLabel = suffix;\n    if (!devLabel) {\n      const fDev = fields.find(f => f.name === 'dev_idx');\n      const rawDevVals = fDev ? vectorToArray(fDev.values) : [];\n      devLabel = rawDevVals.length > 0 && rawDevVals[0] != null ? String(rawDevVals[0]) : String(frameIdx);\n    }\n\n    const rawX = vectorToArray(fDeltaT.values);\n    const rawRate = vectorToArray(fRate.values);\n\n    const xData = [];\n    const yRate = [];\n\n    for (let i = 0; i < rawX.length; i++) {\n      if (rawX[i] != null && rawRate[i] != null) {\n        xData.push(Number(rawX[i]));\n        yRate.push(Number(rawRate[i]));\n      }\n    }\n\n    if (yRate.length === 0) return;\n\n    const colorIdx = parseInt(devLabel, 10) % deviceColors.length || 0;\n    const mColor = deviceColors[colorIdx];\n    const tColor = trendColors[colorIdx];\n\n    // Trace 1: Performance Scatter Points\n    traces.push({\n      x: xData,\n      y: yRate,\n      name: `Dev ${devLabel} Recovery`,\n      type: 'scatter',\n      mode: 'markers',\n      marker: { \n        color: mColor, \n        size: 5.5, \n        opacity: 0.6,\n        line: { color: '#000000', width: 0.3 }\n      },\n      hovertemplate: `Dev ${devLabel} Actual: <b>%{y:.2f}°${activeUnit}/h</b><extra></extra>`\n    });\n\n    // Trace 2: Independent Linear Regression Curve\n    if (yRate.length >= 2) {\n      let sx = 0, sy = 0, sxy = 0, sx2 = 0;\n      const n = xData.length;\n      for (let i = 0; i < n; i++) {\n        sx += xData[i];\n        sy += yRate[i];\n        sxy += xData[i] * yRate[i];\n        sx2 += xData[i] * xData[i];\n      }\n      \n      const den = n * sx2 - sx * sx;\n      if (den !== 0) {\n        const m = (n * sxy - sx * sy) / den;\n        const b = (sy - m * sx) / n;\n\n        const xSorted = [...xData].sort((a, b) => a - b);\n        const minX = xSorted[0];\n        const maxX = xSorted[xSorted.length - 1];\n\n        const operatorStr = b >= 0 ? '+' : '-';\n        const absoluteB = Math.abs(b);\n        const equationLabel = `Dev ${devLabel}: Rate = (${m.toFixed(3)}*ΔT) ${operatorStr} ${absoluteB.toFixed(2)}`;\n\n        traces.push({\n          x: [minX, maxX],\n          y: [m * minX + b, m * maxX + b],\n          name: equationLabel,\n          type: 'scatter',\n          mode: 'lines',\n          line: { color: tColor, width: 2.5, dash: 'solid' },\n          hovertemplate: `Dev ${devLabel} Model: <b>%{y:.2f}°${activeUnit}/h</b><extra></extra>`\n        });\n      }\n    }\n  });\n});\n\nreturn {\n  data: traces,\n  layout: {\n    margin: { l: 60, r: 40, t: 40, b: 60 },\n    hovermode: 'x unified', // Matched unified layout alignment\n    hoverlabel: {\n      bgcolor: '#111217',\n      bordercolor: '#2c2c35',\n      font: { color: '#cccccc', family: 'Inter, sans-serif', size: 12 }\n    },\n    plot_bgcolor: 'rgba(0,0,0,0)',\n    paper_bgcolor: 'rgba(0,0,0,0)',\n    font: { color: '#cccccc', family: 'Inter, sans-serif' },\n    xaxis: {\n      type: 'linear',\n      title: { text: `Indoor - Outdoor Temperature Delta (ΔT °${activeUnit})`, font: { size: 12 } },\n      gridcolor: '#222225',\n      zeroline: true,\n      zerolinecolor: '#3e3e42'\n    },\n    yaxis: {\n      type: 'linear',\n      // FIX: Clean math notation title indicating structural heat transmission velocity\n      title: { text: `Thermal Recovery Rate (°${activeUnit} / Hour)`, font: { size: 12 } },\n      gridcolor: '#222225',\n      zeroline: true,\n      zerolinecolor: '#3a3a39'\n    },\n    legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' }\n  }\n};",
+              "syncTimeRange": false,
+              "timeCol": ""
+            }
+          },
+          "version": "1.8.1"
+        }
+      }
+    },
+    "panel-12": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "import \"date\"\n\n// 1. Fetch daily average outdoor temperature\ntemps = from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) => r._field == \"avg_outdoor_temp_c\")\n  |> map(fn: (r) => ({ r with _value: if \"${temp_unit}\" == \"F\" then (r._value * 9.0 / 5.0) + 32.0 else r._value }))\n  |> map(fn: (r) => ({ r with _time: date.truncate(t: r._time, unit: 1d) }))\n\n// 2. Fetch daily runtimes for every independent operational stage\nruntimes = from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) => \n      r._field == \"heating_stage1_time\" or\n      r._field == \"heating_stage2_time\" or\n      r._field == \"cooling_stage1_time\" or\n      r._field == \"cooling_stage2_time\" or\n      r._field == \"alt_heat_stage1_time\" or\n      r._field == \"alt_heat_stage2_time\"\n  )\n  |> map(fn: (r) => ({ r with _value: r._value / 3600.0 }))\n  |> map(fn: (r) => ({ r with _time: date.truncate(t: r._time, unit: 1d) }))\n\n// 3. Interleave and pivot side-by-side\nunion(tables: [temps, runtimes])\n  |> group(columns: [\"_time\", \"dev_idx\", \"_field\"])\n  |> last()\n  |> group(columns: [\"dev_idx\"])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> filter(fn: (r) => exists r.avg_outdoor_temp_c)\n  \n  // 4. THERMODYNAMIC SANITIZATION: Nullify cross-seasonal leakage before Plotly regression runs (Table data must have 0s instead of NULLs for trendline regression)\n  |> map(fn: (r) => {\n      // If its colder than 65°F (or 18.3°C), strip out phantom cooling runtime data\n      is_cold = if \"${temp_unit}\" == \"F\" then r.avg_outdoor_temp_c < 50.0 else r.avg_outdoor_temp_c < 10\n      is_hot = if \"${temp_unit}\" == \"F\" then r.avg_outdoor_temp_c > 75.0 else r.avg_outdoor_temp_c > 24\n      \n      return {\n        r with\n        cooling_stage1_time: if is_cold then 0.0 else r.cooling_stage1_time,\n        cooling_stage2_time: if is_cold then 0.0 else r.cooling_stage2_time,\n        // Conversely, nullify heating triggers during warm periods if necessary\n        heating_stage1_time: if is_hot then 0.0 else r.heating_stage1_time,\n        heating_stage2_time: if is_hot then 0.0 else r.heating_stage2_time,\n        alt_heat_stage1_time: if is_hot then 0.0 else r.alt_heat_stage1_time,\n        alt_heat_stage2_time: if is_hot then 0.0 else r.alt_heat_stage2_time\n      }\n  })\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel plots the daily runtime of each HVAC stage against the average outdoor temperature for that day. Each point represents a single day's performance. A linear regression trendline is fitted for each stage, which helps visualize how runtime demand for heating and cooling scales with outdoor temperature. This is useful for identifying the outdoor temperature crossover points where the system switches from heating to cooling and for assessing the load-dependency of each stage.",
+        "id": 12,
+        "links": [],
+        "title": "Daily Runtime vs. Outdoor Temperature",
+        "vizConfig": {
+          "group": "nline-plotlyjs-panel",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "options": {
+              "allData": {},
+              "config": {
+                "displayModeBar": true,
+                "responsive": true
+              },
+              "data": [],
+              "imgFormat": "png",
+              "layout": {
+                "font": {
+                  "family": "Inter, Helvetica, Arial, sans-serif"
+                },
+                "margin": {
+                  "b": 0,
+                  "l": 0,
+                  "r": 0,
+                  "t": 0
+                },
+                "title": {
+                  "automargin": true
+                },
+                "xaxis": {
+                  "automargin": true,
+                  "autorange": true,
+                  "type": "linear"
+                },
+                "yaxis": {
+                  "automargin": true,
+                  "autorange": true
+                }
+              },
+              "onclick": "",
+              "resScale": 2,
+              "script": "const series = Array.isArray(data?.series) ? data.series : [];\nif (series.length === 0) return { data: [], layout: {} };\n\nconst vectorToArray = (values) => {\n  if (values == null) return [];\n  if (Array.isArray(values)) return values;\n  if (Array.isArray(values.buffer)) return values.buffer;\n  if (typeof values.toArray === 'function') return values.toArray();\n  if (typeof values.length === 'number') {\n    const out = [];\n    for (let i = 0; i < values.length; i += 1) {\n      out.push(typeof values.get === 'function' ? values.get(i) : values[i]);\n    }\n    return out;\n  }\n  return [];\n};\n\nlet activeUnit = 'F'; \nif (typeof variables !== 'undefined' && variables.temp_unit) {\n  activeUnit = typeof variables.temp_unit === 'object' ? String(variables.temp_unit.value || 'F') : String(variables.temp_unit);\n}\n\nconst stageConfig = {\n  'heating_stage1_time':  { name: 'Heat S1', color: '#c62828', trend: '#b71c1c' },\n  'heating_stage2_time':  { name: 'Heat S2', color: '#ef5350', trend: '#e53935' },\n  'cooling_stage1_time':  { name: 'Cool S1', color: '#1565c0', trend: '#0d47a1' },\n  'cooling_stage2_time':  { name: 'Cool S2', color: '#42a5f5', trend: '#1e88e5' },\n  'alt_heat_stage1_time': { name: 'Alt Heat S1', color: '#ef6c00', trend: '#e65100' },\n  'alt_heat_stage2_time': { name: 'Alt Heat S2', color: '#ffb300', trend: '#ff8f00' }\n};\n\nconst traces = [];\n\nseries.forEach((frame, frameIdx) => {\n  const fields = frame?.fields || [];\n  const fTemp = fields.find(f => f.name.startsWith('avg_outdoor_temp_c'));\n  const fDev = fields.find(f => f.name === 'dev_idx');\n  \n  const rawDevVals = fDev ? vectorToArray(fDev.values) : [];\n  let devLabel = rawDevVals.length > 0 && rawDevVals[0] != null ? String(rawDevVals[0]) : '';\n  if (!devLabel) {\n    const match = frame.name ? frame.name.match(/dev_idx=[\"']?(\\w+)/) : null;\n    devLabel = match ? match[1] : String(frameIdx);\n  }\n\n  if (!fTemp) return;\n  const rawTemp = vectorToArray(fTemp.values);\n\n  Object.keys(stageConfig).forEach((stageField) => {\n    const fRuntime = fields.find(f => f.name.startsWith(stageField));\n    if (!fRuntime) return;\n\n    const rawRuntime = vectorToArray(fRuntime.values);\n    const xData = [];\n    const yData = [];\n\n    for (let i = 0; i < rawTemp.length; i++) {\n      if (rawTemp[i] != null && rawRuntime[i] != null && rawRuntime[i] > 0.01) {\n        xData.push(Number(rawTemp[i]));\n        yData.push(Number(rawRuntime[i]));\n      }\n    }\n\n    if (xData.length > 0) {\n      const cfg = stageConfig[stageField];\n      const isStage2 = stageField.includes('stage2');\n\n      // Trace 1: Granular Stage Scatter Points (Clean Label)\n      traces.push({\n        x: xData,\n        y: yData,\n        name: `Dev ${devLabel} | ${cfg.name}`,\n        type: 'scatter',\n        mode: 'markers',\n        marker: { \n          color: cfg.color, \n          size: isStage2 ? 6.5 : 5.5, \n          opacity: 0.6,\n          symbol: isStage2 ? 'triangle-up' : 'circle'\n        },\n        hovertemplate: `Dev ${devLabel} | ${cfg.name} Actual: <b>%{y:.2f} h</b><extra></extra>`\n      });\n\n      // Trace 2: Independent Linear Regression Curve\n      if (xData.length >= 2) {\n        let sx = 0, sy = 0, sxy = 0, sx2 = 0;\n        const n = xData.length;\n        for (let i = 0; i < n; n, i++) {\n          sx += xData[i];\n          sy += yData[i];\n          sxy += xData[i] * yData[i];\n          sx2 += xData[i] * xData[i];\n        }\n        \n        const den = n * sx2 - sx * sx;\n        if (den !== 0) {\n          const m = (n * sxy - sx * sy) / den;\n          const b = (sy - m * sx) / n;\n\n          const xSorted = [...xData].sort((a, b) => a - b);\n          const minX = xSorted[0];\n          const maxX = xSorted[xSorted.length - 1];\n\n          const sign = b >= 0 ? '+' : '-';\n          const equationLabel = `Dev ${devLabel} | ${cfg.name}: h = ${m.toFixed(3)}T ${sign} ${Math.abs(b).toFixed(1)}`;\n\n          traces.push({\n            x: [minX, maxX],\n            y: [m * minX + b, m * maxX + b],\n            name: equationLabel,\n            type: 'scatter',\n            mode: 'lines',\n            line: { \n              color: cfg.trend, \n              width: 2.5, \n              dash: isStage2 ? 'dash' : 'solid' \n            },\n            hovertemplate: `Dev ${devLabel} | ${cfg.name} Model: <b>%{y:.2f} h</b><extra></extra>`\n          });\n        }\n      }\n    }\n  });\n});\n\nreturn {\n  data: traces,\n  layout: {\n    margin: { l: 60, r: 40, t: 40, b: 60 },\n    hovermode: 'x unified', \n    hoverlabel: {\n      bgcolor: '#111217',\n      bordercolor: '#2c2c35',\n      font: { color: '#cccccc', family: 'Inter, sans-serif', size: 12 }\n    },\n    plot_bgcolor: 'rgba(0,0,0,0)',\n    paper_bgcolor: 'rgba(0,0,0,0)',\n    font: { color: '#cccccc', family: 'Inter, sans-serif' },\n    xaxis: {\n      type: 'linear',\n      title: { text: `Average Daily Outdoor Temperature (°${activeUnit})`, font: { size: 12 } },\n      gridcolor: '#222225',\n      zeroline: false\n    },\n    yaxis: {\n      type: 'linear',\n      autorange: false,\n      range: [-0.4, 7.0], \n      title: { text: 'Daily Stage Runtime (Hours)', font: { size: 12 } },\n      gridcolor: '#222225',\n      zeroline: true,\n      zerolinecolor: '#3a3a39'\n    },\n    legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' }\n  }\n};",
+              "syncTimeRange": false,
+              "timeCol": ""
+            }
+          },
+          "version": "1.8.1"
+        }
+      }
+    },
+    "panel-2": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) =>\n      r._field == \"heating_stage1_time\" or\n      r._field == \"heating_stage2_time\" or\n      r._field == \"alt_heat_stage1_time\" or\n      r._field == \"alt_heat_stage2_time\" or\n      r._field == \"cooling_stage1_time\" or\n      r._field == \"cooling_stage2_time\" or\n      r._field == \"fan_time\" or\n      r._field == \"total_humidifier_time\")\n  // Convert from seconds to hours instantly\n  |> map(fn: (r) => ({ r with _value: r._value / 3600.0 }))\n  \n  // OPTIMIZATION 1: Drop raw rows that are 0 or negative before grouping/pivoting\n  |> filter(fn: (r) => r._value > 0.0)\n  \n  |> group(columns: [\"_time\"])\n  \n  // Pivot only the surviving dates that actually have data\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  \n  // OPTIMIZATION 2: Ensure we don not process completely empty pivoted rows\n  |> filter(fn: (r) => \n      exists r.heating_stage1_time or \n      exists r.heating_stage2_time or \n      exists r.alt_heat_stage1_time or \n      exists r.alt_heat_stage2_time or \n      exists r.cooling_stage1_time or \n      exists r.cooling_stage2_time or \n      exists r.fan_time or \n      exists r.total_humidifier_time\n  )\n  // Dynamically calculate pure independent Fan-Only circulation runtime\n  |> map(fn: (r) => {\n      h1 = if exists r.heating_stage1_time then r.heating_stage1_time else 0.0\n      h2 = if exists r.heating_stage2_time then r.heating_stage2_time else 0.0\n      ah1 = if exists r.alt_heat_stage1_time then r.alt_heat_stage1_time else 0.0\n      ah2 = if exists r.alt_heat_stage2_time then r.alt_heat_stage2_time else 0.0\n      c1 = if exists r.cooling_stage1_time then r.cooling_stage1_time else 0.0\n      c2 = if exists r.cooling_stage2_time then r.cooling_stage2_time else 0.0\n      \n      total_hvac = h1 + h2 + ah1 + ah2 + c1 + c2\n      raw_fan = if exists r.fan_time then r.fan_time else 0.0\n      \n      fan_only = if raw_fan > total_hvac then raw_fan - total_hvac else 0.0\n\n      return {\n        _time: r._time,\n        heating_stage1_time: r.heating_stage1_time,\n        heating_stage2_time: r.heating_stage2_time,\n        alt_heat_stage1_time: r.alt_heat_stage1_time,\n        alt_heat_stage2_time: r.alt_heat_stage2_time,\n        cooling_stage1_time: r.cooling_stage1_time,\n        cooling_stage2_time: r.cooling_stage2_time,\n        humidifier_time: r.total_humidifier_time,\n        fan_time: fan_only\n      }\n  })\n  |> group()\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This chart displays a detailed breakdown of the total daily runtime (in hours) for each individual HVAC operational stage. This includes primary heating/cooling stages (1 and 2), alternate/auxiliary heat stages, independent fan-only circulation (calculated by subtracting HVAC-driven fan time from total fan time), and humidifier runtime. The stacked bar format provides a clear view of total system activity and the contribution of each component on any given day.",
+        "id": 2,
+        "links": [],
+        "title": "Daily HVAC Runtime by Stage (Hours)",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 100,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "normal"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "fieldMinMax": false,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 20
+                    }
+                  ]
+                },
+                "unit": "h"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "heating_stage1_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat S1"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#c62828",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "heating_stage2_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat S2"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef5350",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "cooling_stage1_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool S1"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#1565c0",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "cooling_stage2_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool S2"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#42a5f5",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "alt_heat_stage1_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Alt Heat S1"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef6c00",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "alt_heat_stage2_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Alt Heat S2"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ffb300",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "fan_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Fan"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#2e7d32",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "humidifier_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Humidifier"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#00897b",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "min",
+                  "max",
+                  "mean",
+                  "sum"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-3": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) =>\n      r._field == \"total_heat_time\" or\n      r._field == \"total_alt_heat_time\" or\n      r._field == \"total_cooling_time\" or\n      r._field == \"fan_time\" or\n      r._field == \"total_humidifier_time\")\n  // 1. Convert from raw seconds to hours immediately\n  |> map(fn: (r) => ({ r with _value: r._value / 3600.0 }))\n  \n  // 2. Group by time to line up all fields for the same calendar day\n  |> group(columns: [\"_time\"])\n  \n  // 3. Pivot early so we can safely do cross-field calculations\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  \n  // 4. Dynamically strip active HVAC operational blocks out of the fan timeline\n  |> map(fn: (r) => {\n      hc = if exists r.total_heat_time then r.total_heat_time else 0.0\n      ahc = if exists r.total_alt_heat_time then r.total_alt_heat_time else 0.0\n      cc = if exists r.total_cooling_time then r.total_cooling_time else 0.0\n      \n      total_active_hvac = hc + ahc + cc\n      raw_fan = if exists r.fan_time then r.fan_time else 0.0\n      \n      // Isolate residual fan circulation runtimes\n      fan_only = if raw_fan > total_active_hvac then raw_fan - total_active_hvac else 0.0\n\n      return {\n        _time: r._time,\n        total_heat_time: r.total_heat_time,\n        total_alt_heat_time: r.total_alt_heat_time,\n        total_cooling_time: r.total_cooling_time,\n        total_humidifier_time: r.total_humidifier_time,\n        fan_time: fan_only // Overwritten with clean, independent fan runtime data\n      }\n  })\n  \n  // 5. Merge streams into a single clean data frame for Grafanas stacking engine\n  |> group()\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel provides a high-level summary of daily HVAC usage by aggregating runtimes into total heating, total cooling, total alternate heat, and independent fan circulation. This is useful for understanding the primary mode of HVAC operation each day and comparing the energy mix at a glance. Runtimes are shown in hours.",
+        "id": 3,
+        "links": [],
+        "title": "Daily Runtime Totals by Mode",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 0,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "normal"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "h"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "total_heat_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Total Heat"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#c62828",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "total_alt_heat_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Total Alt Heat"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef6c00",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "total_cooling_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Total Cooling"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#1565c0",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "fan_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Fan"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#2e7d32",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "total_humidifier_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Humidifier"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#00897b",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "sum",
+                  "mean",
+                  "max"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-4": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) =>\n      r._field == \"heating_stage1_time\" or\n      r._field == \"heating_stage2_time\" or\n      r._field == \"alt_heat_stage1_time\" or\n      r._field == \"alt_heat_stage2_time\" or\n      r._field == \"cooling_stage1_time\" or\n      r._field == \"cooling_stage2_time\")\n// 2. Performance Optimization: Drop 0-value fields entirely to keep the table lean\n  |> filter(fn: (r) => r._value > 0.0)\n  |> map(fn: (r) => ({ r with _value: r._value / 3600.0 }))\n  |> group(columns: [\"_time\", \"_field\"])\n  |> sum(column: \"_value\")\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This chart shows the relative percentage of time each HVAC stage was active during a day's total runtime. It helps visualize the system's reliance on higher stages (e.g., Stage 2 heating/cooling) versus lower, more efficient stages. A day with a high percentage of Stage 2 usage indicates a higher thermal load that the primary stage could not handle alone.",
+        "id": 4,
+        "links": [],
+        "title": "Daily Stage Mix (Percentage)",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 0,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "percent"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "h"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "heating_stage1_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat S1"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#c62828",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "heating_stage2_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat S2"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef5350",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "alt_heat_stage1_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Alt Heat S1"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef6c00",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "alt_heat_stage2_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Alt Heat S2"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ffb300",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "cooling_stage1_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool S1"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#1565c0",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "cooling_stage2_time"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool S2"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#42a5f5",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-5": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) =>\n      r._field == \"heating_cycle_count\" or\n      r._field == \"cooling_cycle_count\" or\n      r._field == \"fan_cycle_count\" or\n      r._field == \"humidifier_cycle_count\")\n  \n  // 1. Group by time to line up all distinct cycle fields for the same day\n  |> group(columns: [\"_time\"])\n  \n  // 2. Pivot fields into columns so we can perform cross-field subtraction\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  \n  // 3. Subtract active cooling/heating calls from total fan cycles to isolate standalone fan runs\n  |> map(fn: (r) => {\n      hc = if exists r.heating_cycle_count then r.heating_cycle_count else 0.0\n      cc = if exists r.cooling_cycle_count then r.cooling_cycle_count else 0.0\n      \n      total_hvac_cycles = hc + cc\n      raw_fan_cycles = if exists r.fan_cycle_count then r.fan_cycle_count else 0.0\n      \n      // Isolate cycles where the fan ran strictly on its own without heating or cooling\n      fan_only_cycles = if raw_fan_cycles > total_hvac_cycles then raw_fan_cycles - total_hvac_cycles else 0.0\n\n      return {\n        _time: r._time,\n        heating_cycle_count: r.heating_cycle_count,\n        cooling_cycle_count: r.cooling_cycle_count,\n        humidifier_cycle_count: r.humidifier_cycle_count,\n        fan_cycle_count: fan_only_cycles // Overwritten with standalone circulation cycles\n      }\n  })\n  \n  // 4. Merge back into a clean stream for Grafana stacked bar engine\n  |> group()\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel displays the total number of on/off cycles per day for each primary HVAC mode: heating, cooling, fan, and humidifier. The 'Fan' cycle count is specifically calculated to represent only the cycles where the fan ran independently, excluding cycles where it ran as part of a heating or cooling call. This helps in diagnosing equipment short-cycling and understanding system usage patterns.",
+        "id": 5,
+        "links": [],
+        "title": "Daily Cycle Counts by Mode",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 0,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "normal"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "decimals": 0,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*heating_cycle_count.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#c62828",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*cooling_cycle_count.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#1565c0",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*fan_cycle_count.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Fan Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#2e7d32",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byRegexp",
+                    "options": ".*humidifier_cycle_count.*"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Humidifier Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#00897b",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "sum",
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-6": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) =>\n      r._field == \"heating_stage1_cycle_count\" or\n      r._field == \"heating_stage2_cycle_count\" or\n      r._field == \"alt_heat_stage1_cycle_count\" or\n      r._field == \"alt_heat_stage2_cycle_count\" or\n      r._field == \"cooling_stage1_cycle_count\" or\n      r._field == \"cooling_stage2_cycle_count\")\n  |> group(columns: [\"_time\", \"_field\"])\n  |> sum(column: \"_value\")\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This panel provides a granular breakdown of the number of on/off cycles for each individual HVAC stage (e.g., Heat Stage 1, Cool Stage 2). This is useful for advanced diagnostics, such as identifying if a particular stage is cycling excessively or if the system is frequently escalating to secondary stages.",
+        "id": 6,
+        "links": [],
+        "title": "Daily Cycle Counts by Stage",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 0,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "decimals": 0,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "none"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "heating_stage1_cycle_count"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat S1 Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#c62828",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "heating_stage2_cycle_count"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Heat S2 Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef5350",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "alt_heat_stage1_cycle_count"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Alt Heat S1 Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ef6c00",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "alt_heat_stage2_cycle_count"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Alt Heat S2 Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#ffb300",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "cooling_stage1_cycle_count"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool S1 Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#1565c0",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "cooling_stage2_cycle_count"
+                  },
+                  "properties": [
+                    {
+                      "id": "displayName",
+                      "value": "Cool S2 Cycles"
+                    },
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#42a5f5",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "sum",
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-7": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "from(bucket: \"${bucket_model}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"computed_metrics\")\n  |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n  |> filter(fn: (r) => r.cadence == \"1d\")\n  |> filter(fn: (r) => r._field == \"away_time\" or r._field == \"home_time\" or r._field == \"away_fraction\")\n  |> map(fn: (r) => ({\n      r with\n      _value: if r._field == \"away_fraction\" then r._value else r._value / 3600.0\n  }))\n  |> group(columns: [\"_time\", \"_field\"])\n  |> sum(column: \"_value\")\n  |> group(columns: [\"_field\"])\n  |> sort(columns: [\"_time\"])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This chart visualizes occupancy patterns by showing the total time the system was in 'Home' vs 'Away' mode each day, measured in hours. It also includes an overlay line showing the 'Away' time as a percentage of the total 24-hour period. This is useful for correlating energy usage with home occupancy.",
+        "id": 7,
+        "links": [],
+        "title": "Daily Occupancy (Home vs. Away)",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 70,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 0,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "normal"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "h"
+              },
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "away_fraction"
+                  },
+                  "properties": [
+                    {
+                      "id": "unit",
+                      "value": "percentunit"
+                    },
+                    {
+                      "id": "custom.axisPlacement",
+                      "value": "right"
+                    },
+                    {
+                      "id": "custom.drawStyle",
+                      "value": "line"
+                    },
+                    {
+                      "id": "custom.lineWidth",
+                      "value": 2
+                    },
+                    {
+                      "id": "custom.fillOpacity",
+                      "value": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "sum",
+                  "mean"
+                ],
+                "displayMode": "table",
+                "placement": "right",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
+            }
+          },
+          "version": "13.0.1"
+        }
+      }
+    },
+    "panel-8": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "${datasource}"
+                    },
+                    "group": "influxdb",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "query": "  // 1. Load the base data once to be efficient\n  base_data = from(bucket: \"${bucket_raw}\")\n    |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n    |> filter(fn: (r) => r._measurement == \"indoor_dynamics\")\n    |> filter(fn: (r) => r.dev_idx =~ /${device:regex}/)\n    |> filter(fn: (r) => r._field =~ /^delta_deg_c_per_hr_.*/ or r._field == \"outdoor_temp_c\")\n\n  // 2. Create a stream of only the delta fields\n  deltas = base_data\n    |> filter(fn: (r) => r._field =~ /^delta_deg_c_per_hr_.*/)\n\n  // 3. Create a stream of only the temperature, renaming value to avoid collision\n  temps = base_data\n    |> filter(fn: (r) => r._field == \"outdoor_temp_c\")\n    |> map(fn: (r) => ({ r with temp_val: r._value }))\n    |> drop(columns: [\"_field\", \"_value\"])\n\n  // 4. Join the streams on time and device index\n  enriched = join(tables: {d: deltas, t: temps}, on: [\"_time\", \"dev_idx\"])\n      |> drop(columns: [\"t\"]) // Clean up the joined table structure\n\n  // 5. Transform records into individual observation objects\n  transformed = enriched\n    |> map(fn: (r) => ({\n        _time: r._time,\n        _dev_idx: r.dev_idx, // Keep as original type for the grouping/accumulator\n        x: if \"${temp_unit}\" == \"F\" then (r.temp_val * 9.0 / 5.0) + 32.0 else r.temp_val,\n        y: r._value,\n        stage: r._field\n    }))\n    |> filter(fn: (r) => exists r.x and exists r.y and r.y != 0.0)\n    // Group by dev_idx so reduce runs once per device\n    |> group(columns: [\"dev_idx\"])\n\n\n  transformed"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "This scatter plot shows the relationship between the HVAC system's performance (rate of temperature change in °/hr) and the outdoor temperature at the time of the cycle. Each point represents a single HVAC cycle, colored by its operational stage (e.g., Heat S1, Cool S2). A smoothed trendline (LOWESS regression) is fitted for each stage, revealing how its heating or cooling power varies with outdoor conditions. This is a powerful tool for diagnosing performance issues and understanding the system's operational envelope.",
+        "id": 8,
+        "links": [],
+        "title": "HVAC Performance vs. Outdoor Temperature",
+        "vizConfig": {
+          "group": "nline-plotlyjs-panel",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "options": {
+              "allData": {},
+              "config": {
+                "displayModeBar": true,
+                "responsive": true
+              },
+              "data": [],
+              "imgFormat": "png",
+              "layout": {
+                "font": {
+                  "color": "#cccccc",
+                  "family": "Inter, Helvetica, Arial, sans-serif"
+                },
+                "hovermode": "closest",
+                "margin": {
+                  "b": 60,
+                  "l": 60,
+                  "r": 40,
+                  "t": 40
+                },
+                "paper_bgcolor": "rgba(0,0,0,0)",
+                "plot_bgcolor": "rgba(0,0,0,0)",
+                "title": {
+                  "automargin": true
+                },
+                "xaxis": {
+                  "automargin": true,
+                  "autorange": true,
+                  "gridcolor": "#333333",
+                  "title": "Outdoor Temperature (°${temp_unit})",
+                  "type": "Temperature",
+                  "zeroline": false
+                },
+                "yaxis": {
+                  "automargin": true,
+                  "autorange": true,
+                  "gridcolor": "#333333",
+                  "title": "Thermal Rate of Change (Δ°C / hr)",
+                  "zeroline": true,
+                  "zerolinecolor": "#555555"
+                }
+              },
+              "onclick": "",
+              "resScale": 2,
+              "script": "const series = Array.isArray(data?.series) ? data.series : [];\nif (series.length === 0) {\n  return { data: [], layout: {} };\n}\n\nconst vectorToArray = (values) => {\n  if (values == null) return [];\n  if (Array.isArray(values)) return values;\n  if (Array.isArray(values.buffer)) return values.buffer;\n  if (typeof values.toArray === 'function') return values.toArray();\n  if (typeof values.length === 'number') {\n    const out = [];\n    for (let i = 0; i < values.length; i += 1) {\n      out.push(typeof values.get === 'function' ? values.get(i) : values[i]);\n    }\n    return out;\n  }\n  return [];\n};\n\nconst fieldByName = (fields, name) => fields.find((f) => f.name === name);\n\nconst rows = [];\nfor (const frame of series) {\n  const fields = frame && Array.isArray(frame.fields) ? frame.fields : [];\n  const fx = fieldByName(fields, 'x');\n  const fy = fieldByName(fields, 'y');\n  const fstage = fieldByName(fields, 'stage');\n  const fdev = fieldByName(fields, '_dev_idx');\n  \n  if (!fx || !fy || !fstage || !fdev) continue;\n\n  const xs = vectorToArray(fx.values);\n  const ys = vectorToArray(fy.values);\n  const stages = vectorToArray(fstage.values);\n  const devs = vectorToArray(fdev.values);\n  const n = Math.min(xs.length, ys.length, stages.length, devs.length);\n\n  for (let i = 0; i < n; i += 1) {\n    const x = Number(xs[i]);\n    const y = Number(ys[i]);\n    const stage = String(stages[i] || '');\n    const dev = String(devs[i] || '');\n    if (Number.isFinite(x) && Number.isFinite(y) && stage && dev && stage !== 'other') {\n      rows.push({ x, y, stage, dev });\n    }\n  }\n}\n\nif (rows.length === 0) {\n  return {\n    data: [{ type: 'scatter', mode: 'markers', x: [], y: [] }],\n    layout: {}\n  };\n}\n\nconst palette = {\n  'heat_stage1': '#c62828',\n  'heat_stage2': '#ef5350',\n  'alt_heat_stage1': '#ef6c00',\n  'alt_heat_stage2': '#ffb300',\n  'cool_stage1': '#1565c0',\n  'cool_stage2': '#42a5f5',\n  'fan': '#2e7d32',\n  'humidifier': '#00897b'\n};\n\nconst labelMap = {\n  'heat_stage1': 'Heat 1 Δ',\n  'heat_stage2': 'Heat 2 Δ',\n  'alt_heat_stage1': 'Aux Heat 1 Δ',\n  'alt_heat_stage2': 'Aux Heat 2 Δ',\n  'cool_stage1': 'Cool 1 Δ',\n  'cool_stage2': 'Cool 2 Δ',\n  'fan': 'Fan Δ',\n  'humidifier': 'Humidifier Δ'\n};\n\nlet activeUnit = 'F'; \nif (typeof variables !== 'undefined' && variables.temp_unit) {\n  activeUnit = typeof variables.temp_unit === 'object' ? String(variables.temp_unit.value || 'F') : String(variables.temp_unit);\n}\n\nconst yMultiplier = activeUnit === 'F' ? 1.8 : 1.0;\n\nconst groups = {};\nfor (const r of rows) {\n  const cleanStage = r.stage.replace('delta_deg_c_per_hr_', '');\n  const key = `${cleanStage}|${r.dev}`;\n  if (!groups[key]) {\n    groups[key] = { stage: cleanStage, dev: r.dev, x: [], y: [] };\n  }\n  groups[key].x.push(r.x);\n  groups[key].y.push(r.y * yMultiplier);\n}\n\nconst traces = [];\nconst keys = Object.keys(groups).sort();\n\nfor (const key of keys) {\n  const g = groups[key];\n  const color = palette[g.stage] || '#9ca3af';\n  const stageLabel = labelMap[g.stage] || g.stage.replace(/_/g, ' ');\n  const label = `Dev ${g.dev} | ${stageLabel}`;\n\n  const combined = g.x.map((x, i) => ({ x, y: g.y[i] }));\n  combined.sort((a, b) => a.x - b.x);\n  const sortedX = combined.map(p => p.x);\n  const sortedY = combined.map(p => p.y);\n\n  const isStage2 = g.stage.includes('stage2');\n\n  // Trace 1: Scatter Points\n  traces.push({\n    type: 'scatter',\n    mode: 'markers',\n    name: label,\n    x: sortedX, \n    y: sortedY,\n    marker: { \n      color: color, \n      size: isStage2 ? 5.5 : 4.5, \n      opacity: 0.15,\n      symbol: isStage2 ? 'triangle-up' : 'circle'\n    },\n    showlegend: true,\n    hoverinfo: 'skip'\n  });\n\n  // Trace 2: Robust Localized Moving Window Regression (LOWESS/LOESS Implementation)\n  if (sortedX.length >= 4) {\n    const minObserved = Math.max(-10, Math.floor(sortedX[0]));\n    const maxObserved = Math.min(100, Math.ceil(sortedX[sortedX.length - 1]));\n    \n    const denseX = [];\n    const denseY = [];\n    \n    // Bandwidth span (in °F) - Controls localized smoothing stiffness\n    const span = 8.0; \n\n    for (let x = minObserved; x <= maxObserved; x += 0.5) {\n      let totalWeight = 0;\n      let weightedSumY = 0;\n\n      for (let i = 0; i < sortedX.length; i++) {\n        const dist = Math.abs(sortedX[i] - x);\n        if (dist < span) {\n          // Tricube weight function dampens localized cycle outliers smoothly\n          const w = Math.pow(1 - Math.pow(dist / span, 3), 3);\n          weightedSumY += sortedY[i] * w;\n          totalWeight += w;\n        }\n      }\n\n      // Constrain trend plotting strictly to active supporting data density thresholds\n      if (totalWeight > 0.1) {\n        denseX.push(x);\n        denseY.push(Number((weightedSumY / totalWeight).toFixed(2)));\n      }\n    }\n\n    if (denseX.length >= 2) {\n      traces.push({\n        type: 'scatter',\n        mode: 'lines',\n        name: `${label} Trend`, \n        x: denseX,\n        y: denseY,\n        line: { \n          color: color, \n          width: 3,\n          dash: isStage2 ? 'dash' : 'solid'\n        },\n        opacity: 0.9,\n        hovertemplate: `<span style=\"color:${color}\">▲</span> ${stageLabel}: <b>%{y:+.2f} °${activeUnit}/h</b><extra></extra>`\n      });\n    }\n  }\n}\n\n// Vertical Inverter Staging Threshold Delimiters\nconst cutoffLines = [{ x: 65 }, { x: 75 }, { x: 85 }, { x: 95 }];\nconst shapes = cutoffLines.map(line => ({\n  type: 'line',\n  x0: line.x,\n  x1: line.x,\n  y0: -2.5, \n  y1: 1.5,\n  xref: 'x',\n  yref: 'y',\n  line: { \n    color: '#343438', \n    width: 2, \n    dash: 'dash' \n  }\n}));\n\nreturn {\n  data: traces,\n  layout: {\n    margin: { l: 65, r: 40, t: 40, b: 60 },\n    hovermode: 'x unified', \n    hoverlabel: {\n      bgcolor: '#111217',\n      bordercolor: '#2c2c35',\n      font: { color: '#cccccc', family: 'Inter, sans-serif', size: 12 },\n      namelength: 0\n    },\n    plot_bgcolor: 'rgba(0,0,0,0)',\n    paper_bgcolor: 'rgba(0,0,0,0)',\n    font: { color: '#cccccc' },\n    shapes: shapes,\n    xaxis: {\n      type: 'linear',\n      autorange: false,      \n      range: [-10, 100],      \n      tickmode: 'linear',\n      tick0: -10,\n      dtick: 5, \n      title: { text: `Outdoor Temperature (°${activeUnit})`, font: { size: 13 } },\n      gridcolor: '#222225',\n      zeroline: false,\n      hoverformat: '.1f'      \n    },\n    yaxis: {\n      type: 'linear',\n      autorange: false,      \n      range: [-2.5, 1.5], // Tightened visual spectrum window mapping      \n      title: { text: `Thermal Rate of Change (Δ°${activeUnit} / hr)`, font: { size: 13 } },\n      gridcolor: '#222225',\n      zeroline: true,\n      zerolinecolor: '#3a3a39',\n      zerolinewidth: 1.5\n    },\n    legend: { \n      orientation: 'h', \n      y: -0.25, \n      x: 0.5, \n      xanchor: 'center',\n      font: { size: 11 } \n    }\n  }\n};",
+              "syncTimeRange": false,
+              "timeCol": ""
+            }
+          },
+          "version": "1.8.1"
+        }
+      }
+    }
+  },
+  "layout": {
+    "kind": "GridLayout",
+    "spec": {
+      "items": [
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-1"
+            },
+            "height": 11,
+            "width": 24,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-2"
+            },
+            "height": 8,
+            "width": 24,
+            "x": 0,
+            "y": 11
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-8"
+            },
+            "height": 12,
+            "width": 12,
+            "x": 0,
+            "y": 19
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-12"
+            },
+            "height": 12,
+            "width": 12,
+            "x": 12,
+            "y": 19
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-10"
+            },
+            "height": 12,
+            "width": 12,
+            "x": 0,
+            "y": 31
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-11"
+            },
+            "height": 12,
+            "width": 12,
+            "x": 12,
+            "y": 31
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-7"
+            },
+            "height": 12,
+            "width": 12,
+            "x": 0,
+            "y": 43
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-6"
+            },
+            "height": 12,
+            "width": 12,
+            "x": 12,
+            "y": 43
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-3"
+            },
+            "height": 11,
+            "width": 12,
+            "x": 0,
+            "y": 55
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-5"
+            },
+            "height": 11,
+            "width": 12,
+            "x": 12,
+            "y": 55
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-4"
+            },
+            "height": 11,
+            "width": 12,
+            "x": 0,
+            "y": 66
+          }
+        }
+      ]
+    }
+  },
+  "links": [],
+  "liveNow": false,
+  "preload": false,
+  "tags": [
+    "nestgraph2",
+    "hvac",
+    "temperature"
+  ],
+  "timeSettings": {
+    "autoRefresh": "15m",
+    "autoRefreshIntervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "fiscalYearStartMonth": 0,
+    "from": "now-15d",
+    "hideTimepicker": false,
+    "timezone": "browser",
+    "to": "now"
+  },
+  "title": "NestGraph2 - Daily Outdoor + HVAC Runtime",
+  "variables": [
+    {
+      "kind": "DatasourceVariable",
+      "spec": {
+        "allowCustomValue": true,
+        "current": {
+          "text": "InfluxDB-1",
+          "value": "_3BCVbwnz"
+        },
+        "hide": "dontHide",
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "pluginId": "influxdb",
+        "refresh": "onDashboardLoad",
+        "regex": "",
+        "skipUrlSync": false
+      }
+    },
+    {
+      "kind": "CustomVariable",
+      "spec": {
+        "allowCustomValue": true,
+        "current": {
+          "text": "nestgraph_v2_raw",
+          "value": "nestgraph_v2_raw"
+        },
+        "hide": "dontHide",
+        "includeAll": false,
+        "label": "Raw Bucket",
+        "multi": false,
+        "name": "bucket_raw",
+        "options": [],
+        "query": "nestgraph_v2_raw",
+        "skipUrlSync": false,
+        "valuesFormat": "csv"
+      }
+    },
+    {
+      "kind": "CustomVariable",
+      "spec": {
+        "allowCustomValue": true,
+        "current": {
+          "text": "nestgraph_v2_model",
+          "value": "nestgraph_v2_model"
+        },
+        "hide": "dontHide",
+        "includeAll": false,
+        "label": "Model Bucket",
+        "multi": false,
+        "name": "bucket_model",
+        "options": [],
+        "query": "nestgraph_v2_model",
+        "skipUrlSync": false,
+        "valuesFormat": "csv"
+      }
+    },
+    {
+      "kind": "CustomVariable",
+      "spec": {
+        "allowCustomValue": true,
+        "current": {
+          "text": "nestgraph_v2_devmap",
+          "value": "nestgraph_v2_devmap"
+        },
+        "hide": "dontHide",
+        "includeAll": false,
+        "label": "Devmap Bucket",
+        "multi": false,
+        "name": "bucket_devmap",
+        "options": [],
+        "query": "nestgraph_v2_devmap",
+        "skipUrlSync": false,
+        "valuesFormat": "csv"
+      }
+    },
+    {
+      "kind": "QueryVariable",
+      "spec": {
+        "allValue": ".*",
+        "allowCustomValue": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "definition": "from(bucket: \"${bucket_devmap}\")\n  |> range(start: 0)\n  |> filter(fn: (r) => r._measurement == \"device_index\" and r._field == \"dev_idx\")\n  |> group(columns: [\"device_id\"])\n  |> last()\n  |> keep(columns: [\"_value\"])\n  |> map(fn: (r) => ({ _value: string(v: r._value) }))",
+        "hide": "dontHide",
+        "includeAll": true,
+        "label": "Device",
+        "multi": true,
+        "name": "device",
+        "options": [],
+        "query": {
+          "datasource": {
+            "name": "${datasource}"
+          },
+          "group": "influxdb",
+          "kind": "DataQuery",
+          "spec": {
+            "__legacyStringValue": "from(bucket: \"${bucket_devmap}\")\n  |> range(start: 0)\n  |> filter(fn: (r) => r._measurement == \"device_index\" and r._field == \"dev_idx\")\n  |> group(columns: [\"device_id\"])\n  |> last()\n  |> keep(columns: [\"_value\"])\n  |> map(fn: (r) => ({ _value: string(v: r._value) }))"
+          },
+          "version": "v0"
+        },
+        "refresh": "onTimeRangeChanged",
+        "regex": "",
+        "regexApplyTo": "value",
+        "skipUrlSync": false,
+        "sort": "alphabeticalAsc"
+      }
+    },
+    {
+      "kind": "CustomVariable",
+      "spec": {
+        "allowCustomValue": true,
+        "current": {
+          "text": "F",
+          "value": "F"
+        },
+        "hide": "dontHide",
+        "includeAll": false,
+        "label": "Temp Unit",
+        "multi": false,
+        "name": "temp_unit",
+        "options": [],
+        "query": "C,F",
+        "skipUrlSync": false,
+        "valuesFormat": "csv"
+      }
+    }
+  ]
+}

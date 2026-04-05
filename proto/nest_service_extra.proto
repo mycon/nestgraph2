@@ -1,0 +1,22 @@
+syntax = "proto3";
+package nest.trait.service;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+message DeviceInfoTrait {
+  uint64 weave_node_id = 1;
+  string type_name = 2;
+  string class_name = 3;
+  bytes pairer_id = 4;
+  uint64 fabric_id = 5;
+  string service_group_id = 6;
+  int32 device_state = 7;
+  google.protobuf.Timestamp paired_at = 8;
+  string software_version = 9;
+  string resource_instance_id = 10;
+  repeated int32 device_capabilities = 11;
+  repeated int32 device_radios = 12;
+  google.protobuf.StringValue hg_device_id = 13;
+  google.protobuf.StringValue environment_tag = 14;
+}
