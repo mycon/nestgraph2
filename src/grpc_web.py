@@ -43,7 +43,7 @@ if _PROTO_GENERATED_DIR not in sys.path:
 
 try:
     from nest import gateway_pb2 as nest_gateway_pb2
-    import nest_hvac_extra_pb2
+    from nest.trait import hvac_extra_pb2 as nest_hvac_extra_pb2
     from nest import messages_pb2
     from nest.trait import (
         detector_pb2,
@@ -1070,7 +1070,7 @@ def _read_hvac_control_trait(data: bytes) -> dict:
     HvacState { bool cool_stage1_active=1; bool heat_stage1_active=4; ... }
 
     Source: reverse-engineered from sdk-421f7ba4a82b319d562a.js
-    proto/nest_hvac_extra.proto documents the full field map.
+    nest-observe/protobuf/pb/nest/trait/hvac_extra.proto documents the full field map.
 
     Returns dict with decoded HvacControlTrait fields.
     """

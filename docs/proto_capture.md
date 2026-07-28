@@ -69,14 +69,14 @@ blocks, which are often cleaner.
 
 ---
 
-## Step 4 — Update proto/nest_hvac_extra.proto
+## Step 4 — Update nest-observe/protobuf/pb/nest/trait/hvac_extra.proto
 
-Edit `proto/nest_hvac_extra.proto` to:
+Edit `nest-observe/protobuf/pb/nest/trait/hvac_extra.proto` to:
 - Add any new message types.
 - Update field numbers / types for changed messages.
 
 The file is hand-maintained and serves as the canonical proto spec for
-traits not covered by the `nest-observe` submodule.
+supplemental HVAC traits verified from the SDK bundle.
 
 ---
 

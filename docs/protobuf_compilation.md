@@ -41,7 +41,8 @@ and places the generated Python modules into:
 After running the compiler, `proto/generated/` should contain files such as:
 
 - `nest_gateway_pb2.py`
-- `nest_hvac_extra_pb2.py`
+- `nest/trait/hvac_extra_pb2.py`
+- `nest/trait/service_extra_pb2.py`
 - `nestlabs/gateway/v1_pb2.py`
 - `nest/trait/hvac_pb2.py`
 - `nest/trait/sensor_pb2.py`

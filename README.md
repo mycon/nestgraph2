@@ -375,7 +375,6 @@ nestgraph2/
 |-- nest-observe/            # git submodule
 |-- proto/
 |   |-- generated/
-|   `-- *.proto
 |-- scripts/
 |   |-- compile_protos.bat
 |   |-- compile_protos.py
