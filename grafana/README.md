@@ -6,7 +6,7 @@ This folder contains Grafana dashboard JSON files and schema validation assets.
 
 - `metrics.json`: Main dashboard JSON.
 - `realtime.json`: Realtime dashboard JSON.
-- `schema/dashboard_spec_v2.cue`: Official Grafana v2 CUE schema source used for validation.
+- `schema/dashboard_spec_v2.cue`: Official Grafana v2 CUE schema source used for validation. This file is downloaded locally and ignored by git.
 
 ## Validation Options
 
@@ -75,13 +75,13 @@ Note:
 
 ## Updating the Official Schema
 
-Refresh the local schema copy:
+Refresh the local schema copies:
 
 ```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/grafana/grafana/main/apps/dashboard/pkg/apis/dashboard/v2/dashboard_spec.cue" -OutFile "grafana/schema/dashboard_spec_v2.cue"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/download-grafana-schema.ps1
 ```
 
-After updating the schema, rerun the CUE validation task.
+This downloads the Grafana dashboard schema files into `grafana/schema/` for local validation. They are not committed to the repository.
 
 ## Common Issues
 

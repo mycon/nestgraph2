@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Path $PSScriptRoot -Parent
 $dashboardFullPath = Join-Path $repoRoot $DashboardPath
 $schemaFullPath = Join-Path $repoRoot $SchemaPath
+$schemaBootstrapScript = Join-Path $PSScriptRoot "download-grafana-schema.ps1"
 
 if (-not (Test-Path -Path $dashboardFullPath)) {
     Write-Error "Dashboard file not found: $dashboardFullPath"
@@ -14,8 +15,22 @@ if (-not (Test-Path -Path $dashboardFullPath)) {
 }
 
 if (-not (Test-Path -Path $schemaFullPath)) {
-    Write-Error "Schema file not found: $schemaFullPath"
-    exit 1
+    if (-not (Test-Path -Path $schemaBootstrapScript)) {
+        Write-Error "Schema file not found: $schemaFullPath"
+        exit 1
+    }
+
+    try {
+        & $schemaBootstrapScript
+    } catch {
+        Write-Error "FAIL: Unable to download Grafana schema files. $($_.Exception.Message)"
+        exit 1
+    }
+
+    if (-not (Test-Path -Path $schemaFullPath)) {
+        Write-Error "FAIL: Schema file still not found after download: $schemaFullPath"
+        exit 1
+    }
 }
 
 try {

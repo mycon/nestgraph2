@@ -37,6 +37,7 @@ tests/js_dump/*.txt
 # Docker volumes
 influxdb-data/
 grafana-data/
+grafana/schema/*.cue
 
 # IDE
 .vscode/
