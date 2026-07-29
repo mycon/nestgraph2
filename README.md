@@ -1,8 +1,10 @@
 # nestgraph2
 
-nestgraph2 is a Python collector that streams Nest thermostat state over the Nest Observe gRPC protocol, decodes protobuf payloads into structured device metrics, and writes time-series data to InfluxDB v2.
+nestgraph2 is a Python collector that streams Nest thermostat state over the Nest Observe gRPC protocol, decodes protobuf payloads into structured device metrics, and writes time-series data to InfluxDB v2. There are importable Grafana dashboards included to visualize the data.
 
 It is designed to run as a long-lived daemon (Docker or local Python) with an event-driven Observe stream, protobuf-backed trait parsing, and lightweight scheduled jobs for daily thermal metrics used by Grafana dashboards.
+
+Sadly [Google's Smart Device Management (SDM) API](https://developers.google.com/nest/device-access/api/thermostat) didn't have all the staging information I was after. Instead, this project reverse engineered the necessary protobufs and uses gRPC to maintain get the same data stream as home.nest.com. Likely some AI slop is still lingering here as I haven't gotten around to cleaning up all the cruft from my first vibe project. The interfaces could be extended to control the system, but because of the binary packed nature of the protobufs I didn't want an issues with unexpected commands so this project is data collection only.
 
 ## Dashboard Preview
 
