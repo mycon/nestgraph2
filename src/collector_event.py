@@ -29,7 +29,7 @@ from typing import Any
 import src.config as cfg
 import src.grpc_web as grpc_web
 from src.collector import ThermostatCollector
-from src.foyer_client import FoyerAuthError, FoyerError
+from src.foyer_client import FoyerAuthError, FoyerError, FoyerRateLimitError
 from src.grpc_web import OBSERVE_TRAITS_THERMOSTAT, ObserveAuthError, observe_stream
 from src.influx_writer import InfluxWriter
 from src.nest_client import NestAuthError, NestClient
@@ -447,7 +447,11 @@ class EventThermostatCollector(ThermostatCollector):
         if foyer is None:
             return False
         overrides = self._build_foyer_device_id_overrides()
-        snapshot = foyer.poll_observe_compatible_snapshot(device_id_overrides=overrides)
+        snapshot = foyer.poll_observe_compatible_snapshot(
+            device_id_overrides=overrides,
+            traits_poll_interval_sec=cfg.CONNECT_NEST_FOYER_TRAITS_POLL_INTERVAL_SEC,
+            structure_mode_poll_interval_sec=cfg.CONNECT_NEST_FOYER_STRUCTURE_MODE_POLL_INTERVAL_SEC,
+        )
         if snapshot:
             grpc_web.last_stream_activity_ts = time.time()
             self._ingest_snapshot(snapshot)
@@ -459,11 +463,15 @@ class EventThermostatCollector(ThermostatCollector):
         data_source = cfg.CONNECT_NEST_DATA_SOURCE
         foyer_poll_interval = max(5.0, float(cfg.CONNECT_NEST_FOYER_POLL_INTERVAL_SEC))
         log.info(
-            "Collector loop starting (data_source=%s, foyer_poll_interval=%.0fs)",
+            "Collector loop starting (data_source=%s, foyer_poll_interval=%.0fs, "
+            "foyer_traits_poll_interval=%.0fs, foyer_structure_mode_poll_interval=%.0fs)",
             data_source,
             foyer_poll_interval,
+            cfg.CONNECT_NEST_FOYER_TRAITS_POLL_INTERVAL_SEC,
+            cfg.CONNECT_NEST_FOYER_STRUCTURE_MODE_POLL_INTERVAL_SEC,
         )
         consecutive_observe_failures = 0
+        consecutive_foyer_429 = 0
         foyer_fallback_until = 0.0
 
         while self._running:
@@ -482,6 +490,7 @@ class EventThermostatCollector(ThermostatCollector):
             if use_foyer:
                 try:
                     self._run_foyer_poll_once()
+                    consecutive_foyer_429 = 0
                     if self._stop_event.wait(foyer_poll_interval):
                         break
                 except FoyerAuthError as exc:
@@ -489,6 +498,14 @@ class EventThermostatCollector(ThermostatCollector):
                     fatal_auth_error = NestAuthError(str(exc))
                     self.stop()
                     break
+                except FoyerRateLimitError as exc:
+                    consecutive_foyer_429 += 1
+                    wait_sec = min(900.0, 120.0 * (2 ** (consecutive_foyer_429 - 1)))
+                    if exc.retry_after_sec:
+                        wait_sec = max(wait_sec, exc.retry_after_sec)
+                    log.warning("Foyer rate-limited (%s); backing off %.0fs", exc, wait_sec)
+                    if self._stop_event.wait(wait_sec):
+                        break
                 except (FoyerError, Exception) as exc:
                     log.warning("Foyer poll error: %s", exc)
                     if self._stop_event.wait(min(30.0, foyer_poll_interval)):

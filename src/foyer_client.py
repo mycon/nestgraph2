@@ -149,6 +149,34 @@ class FoyerError(RuntimeError):
     """Non-auth Foyer RPC error."""
 
 
+class FoyerRateLimitError(FoyerError):
+    """Foyer RPC rejected with HTTP 429 RESOURCE_EXHAUSTED."""
+
+    def __init__(self, message: str, *, method_path: str = "", retry_after_sec: float | None = None) -> None:
+        super().__init__(message)
+        self.method_path = method_path
+        self.retry_after_sec = retry_after_sec
+
+
+def _valid_temp_c(val: float | None) -> float | None:
+    """Reject Nest unset temperature sentinels (e.g. -9999.0 during Auto-Eco)."""
+    if val is None:
+        return None
+    fval = float(val)
+    if -50.0 < fval < 100.0:
+        return fval
+    return None
+
+
+_FOYER_FAN_SPEED_MAP: dict[int, str] = {
+    1: "stage1",
+    2: "stage2",
+    3: "stage3",
+    4: "off",
+    5: "auto",
+}
+
+
 # ── Generic Protobuf <-> JSPB wire codec ─────────────────────────────────────
 
 
@@ -448,11 +476,6 @@ def _parse_hvac_stage_flags(
     if "ventilat" in lbl or any("ventilat" in n for n in badge_names):
         flags["ventilator_active"] = True
 
-    # When HomeControlService/GetTraits explicitly reports activeThermostatMode == "none"/"off",
-    # heating and cooling are idle (e.g. stage_label is "Heat set to" or "Cool set to").
-    if active_mode in ("none", "off", "idle"):
-        return flags
-
     # Passive mode/setpoint headers (e.g. "Heat set to", "Cool set to", "Eco", "Off")
     # indicate the configured mode while idle, not an active HVAC call.
     is_passive_label = (
@@ -486,7 +509,8 @@ def _parse_hvac_stage_flags(
             else:
                 flags["cool_stage1_active"] = True
 
-    # Fallback to badges / activeThermostatMode when stage_label wasn't an active stage string
+    # Live GetThermostatStatus badges (e.g. "Heating", "Alt. Heat", "Cooling")
+    # always reflect real-time state, even when GetTraits is cached/throttled.
     any_heat = any(
         flags[k]
         for k in (
@@ -501,14 +525,27 @@ def _parse_hvac_stage_flags(
     if not any_heat:
         if any("alt" in n for n in badge_names) or 4 in badge_codes:
             flags["alt_heat_stage1_active"] = True
+            any_heat = True
         elif any("emerg" in n for n in badge_names):
             flags["emergency_heat_active"] = True
+            any_heat = True
         elif any("aux" in n for n in badge_names):
             flags["auxiliary_heat_active"] = True
-        elif any("heating" in n for n in badge_names) or active_mode == "heat":
+            any_heat = True
+        elif any("heating" in n for n in badge_names):
             flags["heat_stage1_active"] = True
+            any_heat = True
     if not any_cool:
-        if any("cooling" in n for n in badge_names) or active_mode == "cool":
+        if any("cooling" in n for n in badge_names):
+            flags["cool_stage1_active"] = True
+            any_cool = True
+
+    # Secondary fallback to GetTraits activeThermostatMode only when GetThermostatStatus
+    # reported neither active stage labels nor active badges.
+    if not any_heat and not any_cool and active_mode not in ("", "none", "off", "idle"):
+        if active_mode == "heat":
+            flags["heat_stage1_active"] = True
+        elif active_mode == "cool":
             flags["cool_stage1_active"] = True
 
     return flags
@@ -550,6 +587,16 @@ class FoyerClient:
         self._homegraph_fetched_ts: float = 0.0
         self._homegraph_ttl_sec: float = 1800.0
         self._last_rotate_ts: float = 0.0
+
+        # Per-RPC caching & 429 backoff state (GetTraits has a ~500 req/day quota)
+        self._traits_cache: dict[str, dict[str, dict[str, Any]]] = {}
+        self._traits_fetched_ts: float = 0.0
+        self._traits_backoff_until: float = 0.0
+        self._traits_429_streak: int = 0
+        self._structure_modes_cache: dict[str, str] = {}
+        self._structure_modes_fetched_ts: float = 0.0
+        self._structure_modes_backoff_until: float = 0.0
+        self._structure_modes_429_streak: int = 0
 
     @property
     def foyer_cookie_header(self) -> str:
@@ -719,6 +766,20 @@ class FoyerClient:
                     continue
                 raise FoyerAuthError(
                     f"Foyer RPC {method_path} auth failed: HTTP {resp.status_code} — {resp.text[:300]}"
+                )
+
+            if resp.status_code == 429:
+                retry_after: float | None = None
+                raw_ra = resp.headers.get("Retry-After", "").strip()
+                if raw_ra:
+                    try:
+                        retry_after = float(raw_ra)
+                    except ValueError:
+                        retry_after = None
+                raise FoyerRateLimitError(
+                    f"Foyer RPC {method_path} failed: HTTP 429 — {resp.text[:300]}",
+                    method_path=method_path,
+                    retry_after_sec=retry_after,
                 )
 
             if not resp.ok:
@@ -975,11 +1036,13 @@ class FoyerClient:
             return out
 
         ts = msg.thermostat_status
-        heat_target_c = float(ts.heating_target.value) if ts.HasField("heating_target") else None
-        current_temp_c = float(ts.current_temperature.value) if ts.HasField("current_temperature") else None
-        cool_target_c = float(ts.cooling_target.value) if ts.HasField("cooling_target") else None
+        heat_target_c = _valid_temp_c(ts.heating_target.value) if ts.HasField("heating_target") else None
+        current_temp_c = _valid_temp_c(ts.current_temperature.value) if ts.HasField("current_temperature") else None
+        cool_target_c = _valid_temp_c(ts.cooling_target.value) if ts.HasField("cooling_target") else None
         humidity = float(ts.current_humidity.value) if ts.HasField("current_humidity") else None
-        backplate_temp_c = float(ts.backplate_temperature.value) if ts.HasField("backplate_temperature") else None
+        if humidity is not None and not (0.0 <= humidity <= 100.0):
+            humidity = None
+        backplate_temp_c = _valid_temp_c(ts.backplate_temperature.value) if ts.HasField("backplate_temperature") else None
 
         setpoint_type = _THERMOSTAT_MODE_TO_SETPOINT_TYPE.get(ts.mode, "heat")
 
@@ -996,14 +1059,34 @@ class FoyerClient:
         eco_heat_c: float | None = None
         eco_cool_c: float | None = None
         if ts.HasField("eco_temperature_range"):
-            if ts.eco_temperature_range.HasField("low") and ts.eco_temperature_range.low.value > -900:
-                eco_heat_c = float(ts.eco_temperature_range.low.value)
-            if ts.eco_temperature_range.HasField("high") and ts.eco_temperature_range.high.value > -900:
-                eco_cool_c = float(ts.eco_temperature_range.high.value)
+            if ts.eco_temperature_range.HasField("low"):
+                eco_heat_c = _valid_temp_c(ts.eco_temperature_range.low.value)
+            if ts.eco_temperature_range.HasField("high"):
+                eco_cool_c = _valid_temp_c(ts.eco_temperature_range.high.value)
+
+        # In Auto-Eco / Eco mode, Foyer sends -9999.0 for heating_target/cooling_target;
+        # fall back to the active Eco temperature bounds so target_temp_c stays valid.
+        if ts.mode == energy_pb2.THERMOSTAT_MODE_ECO:
+            if heat_target_c is None and eco_heat_c is not None:
+                heat_target_c = eco_heat_c
+            if cool_target_c is None and eco_cool_c is not None:
+                cool_target_c = eco_cool_c
+
+        # Decode real-time fan speed directly from GetThermostatStatusResponse.fan_settings
+        # (field 3 = current_speed: 1=stage1, 2=stage2, 3=stage3, 4=off, 5=auto).
+        # Note: field 10 is a static config/capability bool (true even when fan is OFF).
+        fan_speed: str | None = None
+        fan_msg = (
+            msg.fan_settings
+            if msg.HasField("fan_settings")
+            else (ts.fan_control_settings if ts.HasField("fan_control_settings") else None)
+        )
+        if fan_msg is not None and fan_msg.current_speed in _FOYER_FAN_SPEED_MAP:
+            fan_speed = _FOYER_FAN_SPEED_MAP[fan_msg.current_speed]
 
         log.debug(
             "Foyer GetThermostatStatus: device=%s mode=%d status_code=%d unit=%d "
-            "stage_label=%r mode_icon=%d badges=%r",
+            "stage_label=%r mode_icon=%d badges=%r fan=%s",
             ts.device_id,
             ts.mode,
             ts.thermostat_status_code,
@@ -1011,6 +1094,7 @@ class FoyerClient:
             stage_label,
             mode_icon,
             badges,
+            fan_speed,
         )
 
         hvac_flags = _parse_hvac_stage_flags(stage_label, badges)
@@ -1032,6 +1116,7 @@ class FoyerClient:
             "stage_label": stage_label,
             "mode_icon": mode_icon,
             "badges": badges,
+            "fan_speed": fan_speed,
             "hvac_control": hvac_flags,
         })
         return out
@@ -1102,49 +1187,128 @@ class FoyerClient:
     def poll_observe_compatible_snapshot(
         self,
         device_id_overrides: dict[str, str] | None = None,
+        *,
+        traits_poll_interval_sec: float = 300.0,
+        structure_mode_poll_interval_sec: float = 120.0,
     ) -> dict[str, dict[str, Any]]:
         """Poll Foyer and return a snapshot in the exact format of ``parse_observe_response()``.
 
         ``device_id_overrides`` may map either a Foyer UUID or a lowercase room/device name
         to a canonical ``DEVICE_...`` ID (e.g. ``DEVICE_0123456789ABCDEF``) so InfluxDB
         ``dev_idx`` assignments remain continuous with the Observe stream.
+
+        Quota protection:
+        - ``EnergyService/GetThermostatStatus`` runs on every call (near real-time HVAC
+          stages, exact current/backplate temps, humidity, setpoints, fan state).
+        - ``HomeControlService/GetTraits`` is throttled to ``traits_poll_interval_sec``
+          (default 300 s -> ~288 calls/day, safely below Google's ~500-call quota) and
+          backs off independently on HTTP 429 without interrupting thermostat polling.
+        - ``HomeOccupancyService/GetStructureMode`` is throttled to
+          ``structure_mode_poll_interval_sec`` (default 120 s) with independent backoff.
         """
         overrides = device_id_overrides or {}
         graph = self.get_home_graph()
         devices = graph.get("devices", {})
         structures = graph.get("structures", [])
+        now = time.time()
         now_iso = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
-        # Determine structure away/home state
-        structure_modes: dict[str, str] = {}
-        for st in structures:
-            sid = st.get("structure_id", "")
-            if not sid:
-                continue
-            try:
-                structure_modes[sid] = self.get_structure_mode(sid)
-            except Exception as exc:
-                log.debug("Foyer GetStructureMode failed for %s: %s", sid, exc)
-                structure_modes[sid] = "STRUCTURE_MODE_HOME"
+        # Throttled structure away/home state with independent 429 backoff
+        if (
+            structures
+            and now >= self._structure_modes_backoff_until
+            and (
+                not self._structure_modes_cache
+                or (now - self._structure_modes_fetched_ts) >= max(10.0, float(structure_mode_poll_interval_sec))
+            )
+        ):
+            updated_modes: dict[str, str] = dict(self._structure_modes_cache)
+            rate_limited = False
+            for st in structures:
+                sid = st.get("structure_id", "")
+                if not sid:
+                    continue
+                try:
+                    updated_modes[sid] = self.get_structure_mode(sid)
+                    self._structure_modes_429_streak = 0
+                except FoyerRateLimitError as exc:
+                    self._structure_modes_429_streak += 1
+                    backoff = min(1800.0, 300.0 * (2 ** (self._structure_modes_429_streak - 1)))
+                    if exc.retry_after_sec:
+                        backoff = max(backoff, exc.retry_after_sec)
+                    self._structure_modes_backoff_until = now + backoff
+                    log.warning(
+                        "Foyer GetStructureMode rate-limited (HTTP 429); backing off %.0fs (keeping cached mode)",
+                        backoff,
+                    )
+                    rate_limited = True
+                    break
+                except Exception as exc:
+                    log.debug("Foyer GetStructureMode failed for %s: %s", sid, exc)
+                    updated_modes.setdefault(sid, "STRUCTURE_MODE_HOME")
+            self._structure_modes_cache = updated_modes
+            if not rate_limited:
+                self._structure_modes_fetched_ts = now
+
+        structure_modes = dict(self._structure_modes_cache)
 
         nest_uuids = [
             u for u, d in devices.items()
             if d.get("device_type") in ("action.devices.types.THERMOSTAT", "action.devices.types.SENSOR")
             and "nest" in (d.get("agent_id") or "").lower()
         ]
-        traits_by_uuid = self.get_traits(nest_uuids) if nest_uuids else {}
+
+        # Throttled HomeControlService/GetTraits with independent 429 backoff so quota
+        # exhaustion on GetTraits NEVER blocks EnergyService/GetThermostatStatus.
+        traits_fresh = False
+        if (
+            nest_uuids
+            and now >= self._traits_backoff_until
+            and (
+                not self._traits_cache
+                or (now - self._traits_fetched_ts) >= max(30.0, float(traits_poll_interval_sec))
+            )
+        ):
+            try:
+                self._traits_cache = self.get_traits(nest_uuids)
+                self._traits_fetched_ts = now
+                self._traits_429_streak = 0
+                traits_fresh = True
+            except FoyerRateLimitError as exc:
+                self._traits_429_streak += 1
+                backoff = min(3600.0, 900.0 * (2 ** (self._traits_429_streak - 1)))
+                if exc.retry_after_sec:
+                    backoff = max(backoff, exc.retry_after_sec)
+                self._traits_backoff_until = now + backoff
+                log.warning(
+                    "Foyer GetTraits rate-limited (HTTP 429); backing off %.0fs while continuing thermostat polling",
+                    backoff,
+                )
+            except FoyerAuthError:
+                raise
+            except Exception as exc:
+                log.warning("Foyer GetTraits failed (continuing with cached traits): %s", exc)
+
+        traits_by_uuid = self._traits_cache
 
         snapshot: dict[str, dict[str, Any]] = {}
 
-        # Emit LocatedAnnotationsTrait so EventThermostatCollector resolves room names
+        # Emit LocatedAnnotationsTrait using each device's own Google Home / Nest name
+        # (e.g. "Entryway", "A", "E") rather than overriding sensor names with room names.
         annotations: list[dict[str, Any]] = []
-        for room_id, room_name in graph.get("rooms", {}).items():
-            annotations.append({
-                "info": {
-                    "id": {"value": room_id},
-                    "name": {"value": room_name},
-                }
-            })
+        dev_annotation_ids: dict[str, str] = {}
+        for dev_uuid in nest_uuids:
+            meta = devices[dev_uuid]
+            display_name = (meta.get("name") or meta.get("room_name") or "").strip()
+            if display_name:
+                ann_id = f"FOYER_DEV_{dev_uuid}"
+                dev_annotation_ids[dev_uuid] = ann_id
+                annotations.append({
+                    "info": {
+                        "id": {"value": ann_id},
+                        "name": {"value": display_name},
+                    }
+                })
         if structures and annotations:
             first_sid = structures[0]["structure_id"]
             snapshot[f"STRUCTURE_FOYER_{first_sid}"] = {
@@ -1166,14 +1330,16 @@ class FoyerClient:
         for dev_uuid in nest_uuids:
             meta = devices[dev_uuid]
             dev_type = meta["device_type"]
-            room_name = meta.get("room_name") or meta.get("name") or ""
-            room_id = meta.get("room_id") or ""
+            dev_name = meta.get("name") or meta.get("room_name") or ""
+            room_name = meta.get("room_name") or dev_name
+            where_id = dev_annotation_ids.get(dev_uuid) or meta.get("room_id") or ""
             struct_id = meta.get("structure_id") or ""
 
             # Resolve canonical DEVICE_... ID
             canonical_id = (
                 overrides.get(dev_uuid)
                 or (meta.get("phoenix_id") if str(meta.get("phoenix_id", "")).startswith("DEVICE_") else "")
+                or overrides.get(dev_name.strip().lower())
                 or overrides.get(room_name.strip().lower())
                 or overrides.get(dev_type)
                 or f"DEVICE_FOYER_{dev_uuid.replace('-', '').upper()[:16]}"
@@ -1183,7 +1349,7 @@ class FoyerClient:
             ts_params = foyer_traits.get("temperatureSetting", {})
 
             if dev_type == "action.devices.types.SENSOR":
-                temp_c = ts_params.get("ambientAirTemperatureC")
+                temp_c = _valid_temp_c(ts_params.get("ambientAirTemperatureC"))
                 dev_traits: dict[str, Any] = {}
                 if temp_c is not None:
                     dev_traits["current_temperature"] = {
@@ -1191,10 +1357,10 @@ class FoyerClient:
                         "fields": {"value_c": round(float(temp_c), 3)},
                         "state_meta": {"decoded_at": now_iso},
                     }
-                if room_id:
+                if where_id:
                     dev_traits["device_located_settings"] = {
                         "trait_type": "type.nestlabs.com/nest.trait.located.DeviceLocatedSettingsTrait",
-                        "fields": {"where_id": {"value": room_id}},
+                        "fields": {"where_id": {"value": where_id}},
                         "state_meta": {"decoded_at": now_iso},
                     }
                 snapshot[canonical_id] = {
@@ -1203,53 +1369,72 @@ class FoyerClient:
                 }
                 continue
 
-            # Thermostat: combine EnergyService/GetThermostatStatus + HomeControlService/GetTraits
-            status = {}
+            # Thermostat: combine live EnergyService/GetThermostatStatus + cached/fresh GetTraits
+            status: dict[str, Any] = {}
             try:
                 status = self.get_thermostat_status(dev_uuid)
+            except FoyerAuthError:
+                raise
+            except FoyerRateLimitError:
+                raise
             except Exception as exc:
                 log.warning("Foyer GetThermostatStatus failed for %s: %s", dev_uuid, exc)
 
             current_temp_c = status.get("current_temp_c")
-            if current_temp_c is None and ts_params.get("ambientAirTemperatureC") is not None:
-                current_temp_c = round(float(ts_params["ambientAirTemperatureC"]), 3)
+            if current_temp_c is None:
+                fallback_cur = _valid_temp_c(ts_params.get("ambientAirTemperatureC"))
+                if fallback_cur is not None:
+                    current_temp_c = round(fallback_cur, 3)
 
             backplate_temp_c = status.get("backplate_temp_c")
-            if backplate_temp_c is None and ts_params.get("backplateAmbientAirTemperatureC") is not None:
-                backplate_temp_c = round(float(ts_params["backplateAmbientAirTemperatureC"]), 3)
+            if backplate_temp_c is None:
+                fallback_bp = _valid_temp_c(ts_params.get("backplateAmbientAirTemperatureC"))
+                if fallback_bp is not None:
+                    backplate_temp_c = round(fallback_bp, 3)
 
             humidity_pct = status.get("humidity_pct")
             if humidity_pct is None and ts_params.get("ambientAirHumidity") is not None:
                 hum_raw = float(ts_params["ambientAirHumidity"])
                 humidity_pct = round(hum_raw * 100.0 if hum_raw <= 1.0 else hum_raw, 1)
 
+            # Only pass activeThermostatMode fallback from GetTraits if freshly fetched;
+            # live GetThermostatStatus stage_label + badges always take precedence.
+            active_mode_hint = str(ts_params.get("activeThermostatMode") or "") if traits_fresh else ""
             hvac_fields = _parse_hvac_stage_flags(
                 str(status.get("stage_label") or ""),
                 list(status.get("badges") or []),
-                active_mode_str=str(ts_params.get("activeThermostatMode") or ""),
+                active_mode_str=active_mode_hint,
             )
 
-            # Fan speed from HomeControlService/GetTraits fanSpeed
-            fan_params = foyer_traits.get("fanSpeed", {})
-            raw_fan = str(fan_params.get("currentFanSpeedSetting") or "OFF").upper()
-            fan_map = {"OFF": "off", "S1": "stage1", "S2": "stage2", "S3": "stage3", "AUTO": "auto"}
-            fan_speed = fan_map.get(raw_fan, "off" if raw_fan in ("", "OFF", "NONE") else "stage1")
+            # Fan speed: prefer real-time GetThermostatStatus.fan_settings; fall back to GetTraits
+            fan_speed = status.get("fan_speed")
+            if not fan_speed:
+                fan_params = foyer_traits.get("fanSpeed", {})
+                raw_fan = str(fan_params.get("currentFanSpeedSetting") or "OFF").upper()
+                fan_map = {"OFF": "off", "S1": "stage1", "S2": "stage2", "S3": "stage3", "AUTO": "auto"}
+                fan_speed = fan_map.get(raw_fan, "off" if raw_fan in ("", "OFF", "NONE") else "stage1")
 
-            # Setpoints
+            # Setpoints (all validated against Nest's -9999 sentinel)
             setpoint_type = str(status.get("setpoint_type") or ts_params.get("mode") or "heat").lower()
             if setpoint_type == "heatcool":
                 setpoint_type = "range"
             heat_target = status.get("heating_target_c")
             cool_target = status.get("cooling_target_c")
-            if heat_target is None and ts_params.get("thermostatTemperatureSetpointC") is not None:
-                if setpoint_type == "cool":
-                    cool_target = round(float(ts_params["thermostatTemperatureSetpointC"]), 2)
-                else:
-                    heat_target = round(float(ts_params["thermostatTemperatureSetpointC"]), 2)
-            if heat_target is None and ts_params.get("thermostatTemperatureSetpointLowC") is not None:
-                heat_target = round(float(ts_params["thermostatTemperatureSetpointLowC"]), 2)
-            if cool_target is None and ts_params.get("thermostatTemperatureSetpointHighC") is not None:
-                cool_target = round(float(ts_params["thermostatTemperatureSetpointHighC"]), 2)
+            if heat_target is None:
+                sp = _valid_temp_c(ts_params.get("thermostatTemperatureSetpointC"))
+                if sp is not None:
+                    if setpoint_type == "cool":
+                        cool_target = round(sp, 2)
+                    else:
+                        heat_target = round(sp, 2)
+            if heat_target is None:
+                sp_lo = _valid_temp_c(ts_params.get("thermostatTemperatureSetpointLowC"))
+                if sp_lo is not None:
+                    heat_target = round(sp_lo, 2)
+            if cool_target is None:
+                sp_hi = _valid_temp_c(ts_params.get("thermostatTemperatureSetpointHighC"))
+                if sp_hi is not None:
+                    cool_target = round(sp_hi, 2)
 
             tts_fields: dict[str, Any] = {"setpoint_type": setpoint_type}
             if heat_target is not None:
@@ -1297,10 +1482,10 @@ class FoyerClient:
                     "fields": {"value_pct": humidity_pct},
                     "state_meta": {"decoded_at": now_iso},
                 }
-            if room_id:
+            if where_id:
                 dev_traits["device_located_settings"] = {
                     "trait_type": "type.nestlabs.com/nest.trait.located.DeviceLocatedSettingsTrait",
-                    "fields": {"where_id": {"value": room_id}},
+                    "fields": {"where_id": {"value": where_id}},
                     "state_meta": {"decoded_at": now_iso},
                 }
 

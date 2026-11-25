@@ -86,6 +86,8 @@ CONNECT_NEST_TOKEN_REFRESH_MARGIN_SEC: float = float(_daemon.get("token_refresh_
 #              "auto" (Observe stream with automatic Foyer fallback), or "observe"
 CONNECT_NEST_DATA_SOURCE: str = str(_daemon.get("data_source", "foyer")).strip().lower()
 CONNECT_NEST_FOYER_POLL_INTERVAL_SEC: float = float(_daemon.get("foyer_poll_interval_sec", 30.0))
+CONNECT_NEST_FOYER_TRAITS_POLL_INTERVAL_SEC: float = float(_daemon.get("foyer_traits_poll_interval_sec", 300.0))
+CONNECT_NEST_FOYER_STRUCTURE_MODE_POLL_INTERVAL_SEC: float = float(_daemon.get("foyer_structure_mode_poll_interval_sec", 120.0))
 CONNECT_NEST_COOKIE_ROTATE_INTERVAL_SEC: float = float(_daemon.get("cookie_rotate_interval_sec", 540.0))
 
 

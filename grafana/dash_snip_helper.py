@@ -14,7 +14,7 @@ from argparse import RawDescriptionHelpFormatter
 
 def load_json(filepath):
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
             return json.load(f)
     except Exception as e:
         print(f"Error reading JSON file {filepath}: {e}")
@@ -23,7 +23,7 @@ def load_json(filepath):
 def save_json(filepath, data):
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+            json.dump(data, f, indent=2, ensure_ascii=False)
             f.write('\n')
         print(f"Successfully saved updated dashboard to {filepath}")
     except Exception as e:

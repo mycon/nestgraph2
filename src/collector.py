@@ -321,6 +321,11 @@ class ThermostatCollector:
             target_temp_c      = heat_target_c
             target_temp_high_c = None
 
+        raw_humidity = f("current_humidity").get("value_pct")
+        humidity_val = float(raw_humidity) if raw_humidity is not None else None
+        if humidity_val is not None and not (0.0 < humidity_val <= 100.0):
+            humidity_val = None
+
         return {
             "serial":            device_id,
             "name":              device_name,
@@ -329,7 +334,7 @@ class ThermostatCollector:
             "backplate_temp_c":  f("backplate_temperature").get("value_c"),
             "target_temp_c":     target_temp_c,
             "target_temp_high_c": target_temp_high_c,
-            "humidity":          float(f("current_humidity").get("value_pct") or 0),
+            "humidity":          humidity_val,
             "heating":           heating,
             "cooling":           cooling,
             "fan":               fan_on,

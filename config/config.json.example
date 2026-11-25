@@ -27,6 +27,8 @@
     "_comment_data_source": "Data source: 'foyer' (default, Google Home Foyer protobufs; Nest Observe disabled), 'auto' (Observe with Foyer fallback), or 'observe' (legacy Nest Observe only).",
     "data_source": "foyer",
     "foyer_poll_interval_sec": 30,
+    "foyer_traits_poll_interval_sec": 300,
+    "foyer_structure_mode_poll_interval_sec": 120,
     "cookie_rotate_interval_sec": 540,
     "_comment_observe_timeout": "Read timeout for legacy Observe stream in seconds (only used when data_source is 'auto' or 'observe').",
     "observe_timeout_sec": 7200,

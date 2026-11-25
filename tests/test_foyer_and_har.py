@@ -20,6 +20,7 @@ from src import token_store
 from src.collector import ThermostatCollector
 from src.foyer_client import (
     FoyerClient,
+    FoyerRateLimitError,
     _parse_hvac_stage_flags,
     build_sapisidhash_header,
     common_pb2,
@@ -419,6 +420,121 @@ def test_foyer_only_default_skips_observe_login() -> None:
         assert client.access_token == ""
 
 
+def test_auto_eco_sentinel_fan_settings_429_isolation_and_device_names() -> None:
+    # 1. Auto-Eco with -9999.0 heating_target must fall back to eco_heat_c (never emit -9999);
+    #    fan_settings.current_speed=4 must map to 'off' even when field 10 is true.
+    eco_resp = energy_pb2.GetThermostatStatusResponse(
+        fan_settings=common_pb2.FanControlSettings(current_speed=4, user_requested_fan_running=True),
+        thermostat_status=energy_pb2.ThermostatStatus(
+            current_temperature=common_pb2.Temperature(value=20.19),
+            heating_target=common_pb2.Temperature(value=-9999.0),
+            cooling_target=common_pb2.Temperature(value=-9999.0),
+            mode=energy_pb2.THERMOSTAT_MODE_ECO,
+            eco_temperature_range=common_pb2.TemperatureRange(
+                low=common_pb2.Temperature(value=18.87),
+                high=common_pb2.Temperature(value=28.88),
+            ),
+            status_display=energy_pb2.ThermostatStatusDisplay(
+                stage_label="",
+                mode_icon=26,
+                badges=[energy_pb2.ThermostatStatusBadge(title="Auto-Eco", badge_type=2)],
+            ),
+        ),
+    )
+    parsed_eco = FoyerClient.parse_thermostat_status(eco_resp)
+    assert parsed_eco["heating_target_c"] == 18.87
+    assert parsed_eco["cooling_target_c"] == 28.88
+    assert parsed_eco["fan_speed"] == "off"
+    assert not any(parsed_eco["hvac_control"].values())
+
+    # 2. Live active stage_label/badges must NOT be overridden by stale activeThermostatMode='none'
+    live_active = _parse_hvac_stage_flags(
+        "Alt. heat stage 1",
+        [("Heating", 1), ("Alt. Heat", 4)],
+        active_mode_str="none",
+    )
+    assert live_active["alt_heat_stage1_active"] is True
+    live_hum = _parse_hvac_stage_flags(
+        "Humidifying",
+        [("Heating", 1), ("Humidifier", 3), ("Alt. Heat", 4)],
+        active_mode_str="none",
+    )
+    assert live_hum["alt_heat_stage1_active"] is True and live_hum["humidifier_active"] is True
+
+    # 3. GetTraits HTTP 429 must back off cleanly without blocking GetThermostatStatus,
+    #    and device annotations must preserve dev.name ("A") over space.name ("Bedroom").
+    fc = FoyerClient(foyer_cookie_header="SID=s; SAPISID=a; __Secure-1PSID=p")
+    fc._homegraph_cache = {
+        "structures": [{"structure_id": "s1", "name": "Home"}],
+        "rooms": {"r1": "Bedroom", "r2": "Entryway"},
+        "devices": {
+            "u-thermo": {
+                "uuid": "u-thermo",
+                "structure_id": "s1",
+                "name": "Entryway",
+                "room_id": "r2",
+                "room_name": "Entryway",
+                "device_type": "action.devices.types.THERMOSTAT",
+                "agent_id": "nest-home-assistant-prod",
+                "external_id": "z.2.2",
+                "phoenix_id": "DEVICE_0123456789ABCDEF",
+                "traits": [],
+            },
+            "u-sens": {
+                "uuid": "u-sens",
+                "structure_id": "s1",
+                "name": "A",
+                "room_id": "r1",
+                "room_name": "Bedroom",
+                "device_type": "action.devices.types.SENSOR",
+                "agent_id": "nest-home-assistant-prod",
+                "external_id": "DEVICE_0000000000000001",
+                "phoenix_id": "DEVICE_0000000000000001",
+                "traits": [],
+            },
+        },
+    }
+    fc._homegraph_fetched_ts = time.time()
+    fc.get_structure_mode = lambda sid: "STRUCTURE_MODE_HOME"  # type: ignore[method-assign]
+    traits_calls = {"n": 0}
+
+    def _fail_429(_uuids):
+        traits_calls["n"] += 1
+        raise FoyerRateLimitError("HTTP 429", method_path="GetTraits")
+
+    fc.get_traits = _fail_429  # type: ignore[method-assign]
+    fc.get_thermostat_status = lambda _u: {  # type: ignore[method-assign]
+        "current_temp_c": 19.69,
+        "backplate_temp_c": 20.24,
+        "humidity_pct": 43.0,
+        "heating_target_c": 19.98,
+        "cooling_target_c": None,
+        "setpoint_type": "heat",
+        "stage_label": "Alt. heat stage 1",
+        "badges": [("Heating", 1), ("Alt. Heat", 4)],
+        "fan_speed": "stage1",
+    }
+
+    snap1 = fc.poll_observe_compatible_snapshot(traits_poll_interval_sec=300.0)
+    assert traits_calls["n"] == 1
+    assert fc._traits_backoff_until > time.time()
+    # Second poll immediately after 429 must NOT hammer GetTraits again
+    snap2 = fc.poll_observe_compatible_snapshot(traits_poll_interval_sec=300.0)
+    assert traits_calls["n"] == 1
+
+    # Thermostat telemetry still arrived despite GetTraits 429!
+    th = snap2["DEVICE_0123456789ABCDEF"]["traits"]
+    assert th["current_temperature"]["fields"]["value_c"] == 19.69
+    assert th["hvac_control"]["fields"]["alt_heat_stage1_active"] is True
+    assert th["fan_control"]["fields"]["current_speed"] == "stage1"
+
+    # Sensor annotation uses dev.name ("A"), not room name ("Bedroom")
+    anns = snap2["STRUCTURE_FOYER_s1"]["traits"]["located_annotations"]["fields"]["annotations"]
+    ann_map = {a["info"]["id"]["value"]: a["info"]["name"]["value"] for a in anns}
+    sens_where = snap2["DEVICE_0000000000000001"]["traits"]["device_located_settings"]["fields"]["where_id"]["value"]
+    assert ann_map[sens_where] == "A"
+
+
 if __name__ == "__main__":
     test_sapisidhash_matches_spec()
     test_parse_thermostat_status_and_stages()
@@ -428,4 +544,5 @@ if __name__ == "__main__":
     test_token_store_valid_without_transport_url()
     test_har_extractor_home_google_mode()
     test_foyer_only_default_skips_observe_login()
+    test_auto_eco_sentinel_fan_settings_429_isolation_and_device_names()
     print("All Foyer, compiled proto, and HAR tests PASSED.")
