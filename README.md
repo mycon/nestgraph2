@@ -1,6 +1,6 @@
 # nestgraph2
 
-nestgraph2 is a Python collector that polls Nest thermostat and remote temperature sensor state via Google Home's Foyer protobuf API (`google.internal.home.foyer.v1` from `home.google.com`), decodes compiled protobuf payloads into structured device metrics, and writes time-series data to InfluxDB v2. Importable Grafana dashboards are included to visualize realtime and historical metrics.
+nestgraph2 is a Python collector that polls Nest thermostat and remote temperature sensor state via Google Home's Foyer protobuf API (`google.internal.home.foyer.v1` from [home.google.com](https://home.google.com)), decodes compiled protobuf payloads into structured device metrics, and writes time-series data to InfluxDB v2. Importable Grafana dashboards are included to visualize realtime and historical metrics.
 
 It is designed to run as a long-lived daemon (Docker or local Python) with change-gated InfluxDB writes, compiled Foyer protobuf parsing, automated `accounts.google.com/RotateCookies` session keep-alive, and lightweight scheduled jobs for daily thermal metrics used by Grafana dashboards. Legacy Nest Observe gRPC-Web streaming is disabled by default (`connect_nest.data_source = "foyer"`) and can still be opted into via config if needed.
 
@@ -36,7 +36,7 @@ Quick links:
 - Git clone of this repository.
 - Python 3.12+ (for local runs), or Docker Desktop with Compose (for container runs).
 - InfluxDB 2.x instance and API token with write access to your target bucket root.
-- Google Home / Nest account access so you can capture a fresh `home.google.com` HAR and extract tokens.
+- Google Home / Nest account access so you can capture a fresh [home.google.com](https://home.google.com) HAR and extract tokens.
 
 <a id="gs-2-create-runtime-config"></a>
 ### 2) Create Runtime Config
@@ -64,14 +64,14 @@ Important: `config/config.json` is gitignored.
 <a id="gs-3-capture-nest-auth"></a>
 ### 3) Capture Google Home Auth And Create `config/tokens.json`
 
-The collector startup path is token/session based. Capture a HAR from Firefox while signed into `https://home.google.com` (do **not** sign out or close a private browsing window afterwards, or Google will invalidate the session), then extract tokens.
+The collector startup path is token/session based. Capture a HAR from Firefox while signed into https://home.google.com (do **not** sign out or close a private browsing window afterwards, or Google will invalidate the session), then extract tokens.
 
-1. Sign in at `https://home.google.com` in a dedicated Firefox profile/container (or Private Window).
+1. Sign in at https://home.google.com in a dedicated Firefox profile/container (or Private Window).
 2. Open DevTools (`F12`) and go to Network.
 3. Enable persistent logging and reload the page.
 4. Wait until the Google Home API calls finish (`googlehomefoyer-pa.clients6.google.com` `GetHomeGraph` / `GetTraits` and `accounts.google.com/RotateCookies`).
 5. Export HAR ("Save All As HAR") to this repo.
-6. **Close the `home.google.com` tab immediately (do NOT click Sign Out)** so Firefox does not continue calling `RotateCookies` every 10 minutes and racing with the collector on `__Secure-*PSIDTS` cookie rotation.
+6. **Close the [home.google.com](https://home.google.com) tab immediately (do NOT click Sign Out)** so Firefox does not continue calling `RotateCookies` every 10 minutes and racing with the collector on `__Secure-*PSIDTS` cookie rotation.
 7. Run (optionally add `--verify` to live-test the extracted credentials):
 
 ```powershell
@@ -430,7 +430,7 @@ nestgraph2/
 - Config not found:
    - Set `CONFIG_PATH` or create `config/config.json` from example.
 - Foyer auth fails (`HTTP 401 SESSION_COOKIE_INVALID`):
-   - Make sure the `home.google.com` browser tab used for HAR capture was closed immediately (without clicking Sign Out) so the browser does not race `RotateCookies` against the collector; recapture a fresh HAR and re-run `utilities/ff_har_tokens.py --verify`.
+   - Make sure the [home.google.com](https://home.google.com) browser tab used for HAR capture was closed immediately (without clicking Sign Out) so the browser does not race `RotateCookies` against the collector; recapture a fresh HAR and re-run `utilities/ff_har_tokens.py --verify`.
 - Foyer `GetTraits` rate limit (`HTTP 429 RESOURCE_EXHAUSTED`):
    - `GetTraits` is throttled to `300s` by default and backs off automatically without interrupting `GetThermostatStatus`. Increase `connect_nest.foyer_traits_poll_interval_sec` if you have many devices.
 - No devices discovered in metrics run:
