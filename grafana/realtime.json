@@ -135,14 +135,6 @@
                         "fixedColor": "#1565c0",
                         "mode": "fixed"
                       }
-                    },
-                    {
-                      "id": "custom.hideFrom",
-                      "value": {
-                        "legend": false,
-                        "tooltip": false,
-                        "viz": true
-                      }
                     }
                   ]
                 },
@@ -242,6 +234,7 @@
                       "mode": "exclude",
                       "names": [
                         "Current Temp",
+                        "thermostat outdoor_temp_c 0",
                         "Target Temp",
                         "Target Temp High"
                       ],
