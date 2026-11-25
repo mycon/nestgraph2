@@ -82,6 +82,11 @@ LOG_LEVEL: str            = _settings.get("log_level", "INFO").upper()
 _daemon = _section("connect_nest")
 CONNECT_NEST_OBSERVE_TIMEOUT_SEC: float = float(_daemon.get("observe_timeout_sec", 120))
 CONNECT_NEST_TOKEN_REFRESH_MARGIN_SEC: float = float(_daemon.get("token_refresh_margin_sec", 300))
+# Data source: "foyer" (default, Google Home Foyer protobufs only; Observe disabled),
+#              "auto" (Observe stream with automatic Foyer fallback), or "observe"
+CONNECT_NEST_DATA_SOURCE: str = str(_daemon.get("data_source", "foyer")).strip().lower()
+CONNECT_NEST_FOYER_POLL_INTERVAL_SEC: float = float(_daemon.get("foyer_poll_interval_sec", 30.0))
+CONNECT_NEST_COOKIE_ROTATE_INTERVAL_SEC: float = float(_daemon.get("cookie_rotate_interval_sec", 540.0))
 
 
 

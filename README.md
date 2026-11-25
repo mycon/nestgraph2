@@ -62,22 +62,23 @@ Commonly required weather keys:
 Important: `config/config.json` is gitignored.
 
 <a id="gs-3-capture-nest-auth"></a>
-### 3) Capture Nest Auth And Create `config/tokens.json`
+### 3) Capture Google Home Auth And Create `config/tokens.json`
 
-The collector startup path is token/session based. Capture a HAR from Firefox, then extract tokens.
+The collector startup path is token/session based. Capture a HAR from Firefox while signed into `https://home.google.com` (do **not** sign out or close a private browsing window afterwards, or Google will invalidate the session), then extract tokens.
 
-1. Sign in at `https://home.nest.com`.
+1. Sign in at `https://home.google.com` in a dedicated Firefox profile/container (or Private Window).
 2. Open DevTools (`F12`) and go to Network.
 3. Enable persistent logging and reload the page.
-4. Wait until auth calls finish (`iframerpc` issueToken, `issue_jwt`, and `app_launch`).
-5. Export HAR to this repo.
-6. Run:
+4. Wait until the Google Home API calls finish (`googlehomefoyer-pa.clients6.google.com` `GetHomeGraph` / `GetTraits` and `accounts.google.com/RotateCookies`).
+5. Export HAR ("Save All As HAR") to this repo.
+6. **Close the `home.google.com` tab immediately (do NOT click Sign Out)** so Firefox does not continue calling `RotateCookies` every 10 minutes and racing with the collector on `__Secure-*PSIDTS` cookie rotation.
+7. Run (optionally add `--verify` to live-test the extracted credentials):
 
 ```powershell
-python utilities/ff_har_tokens.py --har "home.nest.com_relogin_main_Archive [26-05-20 14-00-30].har"
+python utilities/ff_har_tokens.py --har "home.google.com_Archive.har" --verify
 ```
 
-This writes/merges `config/tokens.json`.
+This writes/merges `config/tokens.json` in `home_google` mode (legacy `home.nest.com` HAR files are also still supported). At runtime, the collector keeps Google session cookies alive via `accounts.google.com/RotateCookies`, mints Nest Observe JWTs dynamically via `accounts.google.com` + `nestauthproxyservice-pa.googleapis.com` (with no `home.nest.com` dependency), and automatically falls back to polling Google Home Foyer (`EnergyService/GetThermostatStatus`, `HomeControlService/GetTraits`, `HomeOccupancyService/GetStructureMode`) if the Observe stream is ever unavailable.
 
 Optional: if you use encrypted token storage, pass the same key used at runtime.
 If you skip this, tokens are still encrypted on first collector run when a key is present:

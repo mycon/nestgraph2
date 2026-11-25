@@ -54,11 +54,16 @@ def _lifecheck_loop(stop_event: threading.Event) -> None:
     # Dynamic stale threshold based on configured observe stream read timeout.
     # Scaled to 2.5x the timeout (min 5 mins) to prevent false positives during
     # low-frequency periods (like AWAY mode), or 3 hours if timeout is disabled.
-    observe_timeout = getattr(cfg, "CONNECT_NEST_OBSERVE_TIMEOUT_SEC", 120.0)
-    if observe_timeout > 0:
-        stale_threshold = max(300, int(observe_timeout * 2.5))
+    data_source = getattr(cfg, "CONNECT_NEST_DATA_SOURCE", "foyer")
+    if data_source == "foyer":
+        poll_interval = max(5.0, float(getattr(cfg, "CONNECT_NEST_FOYER_POLL_INTERVAL_SEC", 30.0)))
+        stale_threshold = max(300, int(poll_interval * 10))
     else:
-        stale_threshold = 10800  # 3 hours fallback
+        observe_timeout = getattr(cfg, "CONNECT_NEST_OBSERVE_TIMEOUT_SEC", 120.0)
+        if observe_timeout > 0:
+            stale_threshold = max(300, int(observe_timeout * 2.5))
+        else:
+            stale_threshold = 10800  # 3 hours fallback
 
     _touch_lifecheck()
     log.debug("lifecheck: alive (heartbeat file=%s)", _LIFECHECK_FILE)

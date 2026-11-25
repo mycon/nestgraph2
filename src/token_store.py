@@ -44,15 +44,24 @@ _DEFAULT_TOKEN_FILE = os.getenv(
 
 # Keys persisted to disk.
 _FIELDS = (
+    "auth_mode",
     "access_token",
     "transport_url",
     "user",
     "userid",
+    "nest_user_id",
     "issue_token",
     "google_bearer_token",
     "google_cookie_header",
     "google_bearer_expiration",
     "cache_expiration",
+    "foyer_cookie_header",
+    "foyer_api_key",
+    "foyer_authuser",
+    "foyer_client_environment",
+    "foyer_user_agent",
+    "rotate_cookies_body",
+    "rotate_cookies_referer",
 )
 
 
@@ -180,16 +189,18 @@ def save(
         log.warning("Could not save token file %s: %s", path, exc)
 
 
-def is_valid(tokens: dict[str, Any], margin_sec: float = 0.0) -> bool:
+def is_valid(tokens: dict[str, Any], margin_sec: float = 0.0, require_transport_url: bool = False) -> bool:
     """
     Return True if *tokens* contains a non-expired access_token.
 
     *margin_sec* allows pre-emptive refresh (e.g. 600s before expiry).
+    ``transport_url`` is optional for Observe/home.google.com flows.
     """
+    has_transport = True if not require_transport_url else bool(tokens.get("transport_url"))
     return bool(
         tokens.get("access_token")
-        and tokens.get("transport_url")
-        and float(tokens.get("cache_expiration", 0)) > time.time() + margin_sec
+        and has_transport
+        and float(tokens.get("cache_expiration", 0) or 0) > time.time() + margin_sec
     )
 
 

@@ -29,22 +29,33 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from requests.cookies import RequestsCookieJar
 
 import requests
 
 from src import token_store
+from src.foyer_client import (
+    DEFAULT_FOYER_API_KEY,
+    DEFAULT_ROTATE_REFERER,
+    FoyerAuthError,
+    FoyerClient,
+    FoyerError,
+)
 
 log = logging.getLogger(__name__)
 
 USER_AGENT = "Nest/5.0.0.23 (iOScom.nestlabs.jasper.release) os=11.0"
 PROTOCOL_VERSION = 1
 GOOGLE_JWT_URL = "https://nestauthproxyservice-pa.googleapis.com/v1/issue_jwt"
-GOOGLE_API_KEY = "AIzaSyAdkSIMNc51XGNEAYWasX9UOWkS5P6sZE4"  # Nest website public key  # legacy; no longer used for pickle
+GOOGLE_API_KEY = "AIzaSyAdkSIMNc51XGNEAYWasX9UOWkS5P6sZE4"  # Nest website public key
+NEST_OAUTH_CLIENT_ID = "733249279899-44tchle2kaa9afr5v9ov7jbuojfr9lrq.apps.googleusercontent.com"
+NEST_OAUTH_SCOPE = "openid profile email https://www.googleapis.com/auth/nest-account"
+NEST_OAUTH_ORIGIN = "https://home.nest.com"
 # Firefox on Windows UA — matches HAR capture (Firefox cadence, ~55-min issueToken refresh)
 GOOGLE_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) "
@@ -58,7 +69,7 @@ GOOGLE_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
 
 # The exact 20 cookies carried on every issueToken request per Firefox HAR analysis.
 # Stable cookies (16): values stay constant across all 7 observed issueToken calls.
-# Rotating cookies (4): rotated by issueToken responses; see ISSUETOKEN_ROTATING_COOKIES.
+# Rotating cookies (6): rotated by issueToken / RotateCookies responses.
 ISSUETOKEN_ALL_COOKIES: frozenset[str] = frozenset({
     "ACCOUNT_CHOOSER",
     "APISID",
@@ -77,19 +88,22 @@ ISSUETOKEN_ALL_COOKIES: frozenset[str] = frozenset({
     "__Secure-1PAPISID",
     "__Secure-1PSID",
     "__Secure-1PSIDCC",
+    "__Secure-1PSIDTS",
     "__Secure-3PAPISID",
     "__Secure-3PSID",
     "__Secure-3PSIDCC",
+    "__Secure-3PSIDTS",
 })
 
-# Subset of ISSUETOKEN_ALL_COOKIES that are refreshed by every issueToken response.
-# Per HAR: SIDCC/__Secure-1PSIDCC/__Secure-3PSIDCC rotate every ~55-min cycle;
-# NID is updated occasionally.  Only these are read from issueToken Set-Cookie
-# responses so the stable 16 cookies are never overwritten by partial responses.
+# Subset of cookies refreshed by issueToken / RotateCookies responses.
+# Only these are read from Set-Cookie responses so the stable cookies are never
+# overwritten by partial responses.
 ISSUETOKEN_ROTATING_COOKIES: frozenset[str] = frozenset({
     "SIDCC",
     "__Secure-1PSIDCC",
     "__Secure-3PSIDCC",
+    "__Secure-1PSIDTS",
+    "__Secure-3PSIDTS",
     "NID",
 })
 
@@ -152,11 +166,13 @@ class NestClient:
         google_bearer_token: str = "",
         token_file: str | None = None,
         refresh_margin_sec: float = 250.0,
+        foyer_only: bool = False,
     ) -> None:
         self._issue_token = str(issue_token or "").strip()
         self._cookies = str(cookies or "").strip()
         self._session = requests.Session()
         self._google_session = requests.Session()
+        self._auth_lock = threading.RLock()
         self._session.headers.update({"User-Agent": USER_AGENT})
         self._google_session.headers.update({
             "User-Agent": GOOGLE_USER_AGENT,
@@ -167,28 +183,54 @@ class NestClient:
         })
         self._token_file = token_file  # path for flat-file JSON token store
         self._refresh_margin_sec = refresh_margin_sec
+        self._foyer_only = bool(foyer_only)
 
+        self._auth_mode: str = ""
         self._transport_url: str = transport_url
         self._access_token: str = access_token
         self._google_bearer_token: str = google_bearer_token
         self._google_bearer_expiration: float = 0.0
         self._user: str = user
         self._userid: str = user_id
+        self._nest_user_id: str = ""
         self._cache_expiration: float = 0.0
         self._last_status: dict[str, Any] | None = None
         self._last_refresh_path: str = "unknown"
         self._refresh_retry_after: float = 0.0
 
-        # If caller supplied pre-extracted browser-session tokens, use them directly.
-        if self._access_token and self._transport_url:
+        # Google Home (home.google.com) Foyer auth & RotateCookies keep-alive state
+        self._foyer_cookie_header: str = ""
+        self._foyer_api_key: str = DEFAULT_FOYER_API_KEY
+        self._foyer_authuser: str = "0"
+        self._foyer_client_environment: str = ""
+        self._foyer_user_agent: str = ""
+        self._rotate_cookies_body: str = ""
+        self._rotate_cookies_referer: str = DEFAULT_ROTATE_REFERER
+        self._last_cookie_rotate_ts: float = 0.0
+        self._foyer_client: FoyerClient | None = None
+
+        # Foyer-only mode: skip all legacy Nest Observe / issue_jwt auth flows.
+        if self._foyer_only:
+            self._load_cache()
+            self._init_foyer_client()
+            if self._foyer_client is None:
+                raise NestAuthError(
+                    "Foyer-only mode is enabled (connect_nest.data_source='foyer'), "
+                    "but no home.google.com Foyer cookies were found in tokens.json. "
+                    "Capture a home.google.com HAR and run utilities/ff_har_tokens.py."
+                )
+            log.info("Foyer-only mode active (nest-observe auth flows disabled).")
+        elif self._access_token and self._transport_url:
             log.info("Using pre-supplied session tokens (skipping login).")
             self._load_cache()
+            self._init_foyer_client()
             if self._cookies:
                 self._bootstrap_google_session_cookies()
             self._update_auth_headers()
             self._cache_expiration = time.time() + 365 * 86400
         else:
             self._load_cache()
+            self._init_foyer_client()
             if self._cookies:
                 self._bootstrap_google_session_cookies()
             if not self._is_cache_valid():
@@ -306,6 +348,75 @@ class NestClient:
     # Public API
     # ------------------------------------------------------------------
 
+    def _init_foyer_client(self) -> None:
+        """Instantiate FoyerClient when home.google.com cookies are available."""
+        if not (self._foyer_cookie_header or self._cookies):
+            self._foyer_client = None
+            return
+
+        if self._foyer_user_agent:
+            self._google_session.headers["User-Agent"] = self._foyer_user_agent
+
+        client = FoyerClient(
+            foyer_cookie_header=self._foyer_cookie_header or self._cookies,
+            accounts_cookie_header=self._cookies or self._foyer_cookie_header,
+            api_key=self._foyer_api_key or DEFAULT_FOYER_API_KEY,
+            authuser=self._foyer_authuser or "0",
+            client_environment=self._foyer_client_environment,
+            user_agent=self._foyer_user_agent or GOOGLE_USER_AGENT,
+            rotate_cookies_body=self._rotate_cookies_body,
+            rotate_cookies_referer=self._rotate_cookies_referer or DEFAULT_ROTATE_REFERER,
+            on_cookies_updated=self._on_foyer_cookies_updated,
+        )
+        if client.has_foyer_credentials():
+            self._foyer_client = client
+            log.info("Initialized Google Home Foyer client (auth_mode=%s)", self._auth_mode or "auto")
+        else:
+            self._foyer_client = None
+
+    def _on_foyer_cookies_updated(
+        self,
+        foyer_cookie_header: str,
+        accounts_cookie_header: str,
+        rotate_body: str,
+        rotate_referer: str,
+    ) -> None:
+        """Persist rotated cookies emitted by FoyerClient back to NestClient & tokens.json."""
+        if foyer_cookie_header:
+            self._foyer_cookie_header = foyer_cookie_header
+        if accounts_cookie_header:
+            self._cookies = accounts_cookie_header
+            for name, val in self._parse_cookie_header(accounts_cookie_header).items():
+                if name in ISSUETOKEN_ROTATING_COOKIES:
+                    self._google_session.cookies.set(name, val, domain=".google.com", path="/")
+                    self._google_session.cookies.set(name, val, domain="accounts.google.com", path="/")
+        if rotate_body:
+            self._rotate_cookies_body = rotate_body
+        if rotate_referer:
+            self._rotate_cookies_referer = rotate_referer
+        self._save_cache()
+
+    @property
+    def foyer_client(self) -> FoyerClient | None:
+        return self._foyer_client
+
+    @property
+    def auth_mode(self) -> str:
+        return self._auth_mode
+
+    def rotate_google_cookies(self, force: bool = False, min_interval_sec: float = 540.0) -> bool:
+        """Keep Google session cookies alive via accounts.google.com/RotateCookies."""
+        with self._auth_lock:
+            if self._foyer_client is None:
+                return False
+            now = time.time()
+            if not force and self._last_cookie_rotate_ts > 0 and (now - self._last_cookie_rotate_ts) < min_interval_sec:
+                return False
+            ok = self._foyer_client.rotate_cookies()
+            if ok:
+                self._last_cookie_rotate_ts = time.time()
+            return ok
+
     @property
     def access_token(self) -> str:
         return self._access_token
@@ -339,6 +450,7 @@ class NestClient:
              "transport_url": self._transport_url,
              "cache_expiration": self._cache_expiration},
             margin_sec=self._refresh_margin_sec,
+            require_transport_url=False,
         )
         # Match Firefox cadence: proactively refresh when Google bearer is near
         # expiry (~55-min cycle per HAR). bearer_expiration==0.0 means no bearer
@@ -367,7 +479,6 @@ class NestClient:
             # caused by transient issue_token failures (for example USER_LOGGED_OUT).
             still_valid = bool(
                 self._access_token
-                and self._transport_url
                 and self._cache_expiration > time.time()
             )
             if still_valid:
@@ -672,81 +783,226 @@ class NestClient:
     # ------------------------------------------------------------------
 
     def _login(self) -> None:
-        if self._issue_token and self._cookies:
-            self._login_google()
-        else:
+        with self._auth_lock:
+            if (self._issue_token and self._cookies) or (
+                self._cookies and (self._auth_mode == "home_google" or self._foyer_client is not None)
+            ):
+                self._login_google()
+            else:
+                raise NestAuthError(
+                    "Missing home.google.com cookies or legacy issue_token/cookies for token refresh. "
+                    "Run utilities/ff_har_tokens.py --har <home.google.com.har> to populate config/tokens.json, "
+                    "or supply access_token and transport_url directly."
+                )
+            self._update_auth_headers()
+            self._save_cache()
+
+    def _resolve_issue_token_url_via_list_sessions(self) -> str:
+        """Obtain a fresh login_hint from accounts.google.com/o/oauth2/iframerpc?action=listSessions
+        using home.google.com cookies and build the Nest issueToken URL dynamically."""
+        ls_params = {
+            "action": "listSessions",
+            "client_id": NEST_OAUTH_CLIENT_ID,
+            "origin": NEST_OAUTH_ORIGIN,
+            "scope": NEST_OAUTH_SCOPE,
+            "ss_domain": NEST_OAUTH_ORIGIN,
+        }
+        ls_url = "https://accounts.google.com/o/oauth2/iframerpc?" + urlencode(ls_params)
+        resp = self._google_session.get(
+            ls_url,
+            headers={
+                "Accept": "*/*",
+                "Accept-Language": GOOGLE_ACCEPT_LANGUAGE,
+                "X-Requested-With": "XmlHttpRequest",
+                "Alt-Used": "accounts.google.com",
+                "Referer": "https://accounts.google.com/o/oauth2/iframe",
+                "Cookie": self._cookie_header_for_request(),
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+            },
+            timeout=30,
+        )
+        if not resp.ok:
             raise NestAuthError(
-                "Missing issue_token/cookies for token refresh. "
-                "Provide connect_nest.token_file with issue_token and google_cookie_header, "
-                "or supply access_token and transport_url directly."
+                f"accounts.google.com listSessions failed: HTTP {resp.status_code} — {resp.text[:300]}"
             )
-        self._update_auth_headers()
-        self._save_cache()
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise NestAuthError(f"listSessions returned non-JSON: {exc}") from exc
+
+        sessions = data.get("sessions") or []
+        if not sessions:
+            raise NestAuthError(
+                f"listSessions returned no active Google sessions (error={data.get('error', '')}). "
+                "Recapture a fresh home.google.com HAR without signing out."
+            )
+        login_hint = str(sessions[0].get("login_hint") or "").strip()
+        if not login_hint:
+            raise NestAuthError("listSessions session entry missing login_hint")
+
+        it_params = {
+            "action": "issueToken",
+            "response_type": "token id_token",
+            "login_hint": login_hint,
+            "client_id": NEST_OAUTH_CLIENT_ID,
+            "origin": NEST_OAUTH_ORIGIN,
+            "scope": NEST_OAUTH_SCOPE,
+            "ss_domain": NEST_OAUTH_ORIGIN,
+            "include_granted_scopes": "true",
+            "auto": "0",
+        }
+        issue_url = "https://accounts.google.com/o/oauth2/iframerpc?" + urlencode(it_params)
+        log.info("Resolved Nest issueToken URL dynamically via accounts.google.com listSessions")
+        return issue_url
 
     def _login_google(self) -> None:
         """
-        Google account login via issue_token + cookies.
-
-        Mirrors the PHP library's Google auth flow:
-          1. GET issue_token URL with Google cookies → Bearer token
-          2. POST to nestauthproxyservice → JWT (Nest access_token) + userid
-          3. POST app_launch with ["user"] bucket → transport_url + user key
-
-        IMPORTANT: Google's OAuth session (represented by cookies) has an implicit
-        server-side timeout of ~45-50 minutes. The cookies file is meant for
-        ONE-TIME bootstrap only. After ~45 minutes of operation, issueToken will
-        begin returning USER_LOGGED_OUT regardless of cookie freshness because
-        the server-side session has expired. At that point, the only solution is
-        to provide fresh cookies from an active browser session.
+        Google account login supporting both:
+          1. New ``home.google.com`` flow:
+             - Keep Google cookies alive via ``accounts.google.com/RotateCookies``.
+             - Dynamically discover ``login_hint`` via ``iframerpc?action=listSessions``
+               (no ``home.nest.com`` login or HAR needed).
+             - Mint Google OAuth bearer token -> ``nestauthproxyservice-pa/v1/issue_jwt``
+               for the real-time Nest Observe gRPC-Web stream.
+             - Never requires ``home.nest.com/session`` or ``app_launch``.
+             - If ``issue_jwt`` is ever retired/unavailable while Foyer is healthy,
+               gracefully falls back to Foyer-only mode so polling continues.
+          2. Legacy ``home.nest.com`` flow (backward compatible).
         """
-        log.info("Logging in to Nest API (Google OAuth / issue_token) …")
+        is_home_google = self._auth_mode == "home_google" or self._foyer_client is not None
+        if self._foyer_only:
+            if self._foyer_client is None:
+                raise NestAuthError("Foyer-only mode requires home.google.com Foyer credentials.")
+            link = self._foyer_client.get_nest_account_link_state()
+            if link.get("userid"):
+                self._userid = link["userid"]
+            if link.get("user"):
+                self._user = link["user"]
+            if link.get("nest_user_id"):
+                self._nest_user_id = link["nest_user_id"]
+            self._last_refresh_path = "foyer_only"
+            log.info("Google Home Foyer session verified (foyer_only=True, userid=%s)", self._userid)
+            return
 
-        # Try to get a fresh bearer token from the issue_token + cookies flow.
-        # This works as long as the cookies represent a valid server-side session
-        # (typically for ~45-50 minutes after initial capture from the browser).
+        log.info(
+            "Logging in to Nest/Google Home API (mode=%s) …",
+            "home_google" if is_home_google else "legacy_nest",
+        )
+
+        # Keep Google session cookies fresh before exchanging tokens.
+        if self._foyer_client is not None:
+            try:
+                self.rotate_google_cookies(min_interval_sec=300.0)
+            except Exception as exc:
+                log.debug("Pre-login RotateCookies failed (continuing): %s", exc)
+
+        # Step 1: Exchange Google cookies -> bearer -> Nest JWT (for Observe stream)
         try:
-            bearer_token = self._exchange_issue_token_for_bearer()
+            if not self._issue_token:
+                self._issue_token = self._resolve_issue_token_url_via_list_sessions()
+
+            try:
+                bearer_token = self._exchange_issue_token_for_bearer()
+            except NestAuthError as first_exc:
+                # In home_google mode, re-resolve login_hint via listSessions after
+                # rotating cookies once before giving up on Observe JWT minting.
+                if is_home_google:
+                    log.debug("First issueToken failed (%s); refreshing cookies + listSessions", first_exc)
+                    if self._foyer_client is not None:
+                        self.rotate_google_cookies(force=True)
+                    self._issue_token = self._resolve_issue_token_url_via_list_sessions()
+                    bearer_token = self._exchange_issue_token_for_bearer()
+                else:
+                    raise
+
             self._google_bearer_token = bearer_token
             self._issue_nest_jwt_from_bearer(bearer_token)
-            self._complete_google_login()
+            self._user = f"user.{self._userid}" if self._userid else self._user
+
+            if is_home_google:
+                # home.google.com flow does not depend on home.nest.com/session or app_launch.
+                if self._foyer_client is not None and not self._nest_user_id:
+                    try:
+                        link = self._foyer_client.get_nest_account_link_state()
+                        if link.get("nest_user_id"):
+                            self._nest_user_id = link["nest_user_id"]
+                        if link.get("user") and not self._user:
+                            self._user = link["user"]
+                    except Exception as link_exc:
+                        log.debug("Foyer GetNestAccountLinkState optional lookup failed: %s", link_exc)
+                self._last_refresh_path = "home_google_issue_jwt"
+                log.info("Google Home -> Nest Observe JWT login successful for userid=%s", self._userid)
+                return
+
+            # Legacy home.nest.com mode: still attempt /session + app_launch,
+            # but keep the valid JWT if home.nest.com is unreachable.
+            try:
+                self._complete_google_login()
+            except Exception as legacy_exc:
+                log.warning(
+                    "Legacy home.nest.com session/app_launch step failed (%s); "
+                    "continuing with Nest Observe JWT from issue_jwt",
+                    legacy_exc,
+                )
             self._last_refresh_path = "issue_token_exchange"
             log.info("Google Nest login successful for userid=%s", self._userid)
             return
         except NestAuthError as exc:
-            log.warning("issue_token exchange failed (cookies may have server-side session timeout): %s", exc)
+            log.warning("issue_token/issue_jwt exchange failed: %s", exc)
 
-        # Browser parity fallback: once home.nest.com/session has been bootstrapped,
-        # it sets user_token/cztoken cookies with multi-day lifetime. Use that
-        # channel before giving up when issueToken starts returning USER_LOGGED_OUT.
-        try:
-            if self._refresh_from_home_session_cookie():
-                self._last_refresh_path = "home_session_cookie_refresh"
-                log.info("Google Nest login successful for userid=%s (home session cookie refresh)", self._userid)
-                return
-        except NestAuthError as exc:
-            log.warning("home session cookie refresh failed: %s", exc)
+        # Fallback 1 (legacy home.nest.com): try home.nest.com/session cookie refresh
+        if not is_home_google:
+            try:
+                if self._refresh_from_home_session_cookie():
+                    self._last_refresh_path = "home_session_cookie_refresh"
+                    log.info("Google Nest login successful for userid=%s (home session cookie refresh)", self._userid)
+                    return
+            except NestAuthError as exc:
+                log.warning("home session cookie refresh failed: %s", exc)
 
-        # Attempt to use cached bearer token as a fallback.
-        # This may work for a short time but should not be relied upon for
-        # sustained operation beyond the original token's lifetime.
+        # Fallback 2: cached bearer token -> issue_jwt
         if self._google_bearer_token:
             try:
                 self._issue_nest_jwt_from_bearer(self._google_bearer_token)
-                self._complete_google_login()
+                self._user = f"user.{self._userid}" if self._userid else self._user
+                if not is_home_google:
+                    try:
+                        self._complete_google_login()
+                    except Exception:
+                        pass
                 self._last_refresh_path = "cached_google_bearer_fallback"
                 log.info("Google Nest login successful for userid=%s (using cached bearer token)", self._userid)
-                log.warning(
-                    "Cached bearer token fallback is temporary. "
-                    "For sustained operation, provide fresh cookies from an active browser session."
-                )
                 return
             except NestAuthError as exc:
                 log.warning("Cached bearer token fallback also failed: %s", exc)
 
+        # Fallback 3 (home.google.com Foyer-only mode): if Observe/issue_jwt fails
+        # (e.g. if Google retires the legacy Nest OAuth client), verify Foyer API
+        # is still alive so EventThermostatCollector can poll Foyer directly.
+        if self._foyer_client is not None:
+            try:
+                link = self._foyer_client.get_nest_account_link_state()
+                if link.get("userid"):
+                    self._userid = link["userid"]
+                if link.get("user"):
+                    self._user = link["user"]
+                if link.get("nest_user_id"):
+                    self._nest_user_id = link["nest_user_id"]
+                self._last_refresh_path = "foyer_only_fallback"
+                log.warning(
+                    "Nest Observe JWT minting failed, but Google Home Foyer session is active "
+                    "(userid=%s); collector will use Foyer polling fallback.",
+                    self._userid,
+                )
+                return
+            except (FoyerAuthError, FoyerError) as foyer_exc:
+                log.warning("Foyer fallback auth check also failed: %s", foyer_exc)
+
         raise NestAuthError(
-            "Google login failed: issue_token exchange failed and cached bearer token unavailable. "
-            "Cookies may have reached server-side session timeout (~45-50 min). "
-            "Provide fresh cookies from an active browser session (Cookie header from issueToken request in DevTools)."
+            "Google login failed: both Observe JWT exchange and Google Home Foyer auth failed. "
+            "Capture a fresh home.google.com HAR (without signing out) and run utilities/ff_har_tokens.py."
         )
 
     @staticmethod
@@ -891,6 +1147,15 @@ class NestClient:
             for name, value in rotating_updates.items():
                 self._google_session.cookies.set(name, value, domain=".google.com", path="/")
                 self._google_session.cookies.set(name, value, domain="accounts.google.com", path="/")
+            if self._foyer_cookie_header:
+                foyer_map = self._parse_cookie_header(self._foyer_cookie_header)
+                foyer_map.update(rotating_updates)
+                self._foyer_cookie_header = "; ".join([f"{k}={v}" for k, v in foyer_map.items()])
+                if self._foyer_client is not None:
+                    self._foyer_client.update_cookies(
+                        foyer_cookie_header=self._foyer_cookie_header,
+                        accounts_cookie_header=self._cookies,
+                    )
             log.debug(
                 "issueToken: updated %d rotating cookie(s): %s (tracked total=%d)",
                 len(rotating_updates),
@@ -1112,8 +1377,7 @@ class NestClient:
 
     def _is_cache_valid(self) -> bool:
         return bool(
-            self._transport_url
-            and self._access_token
+            self._access_token
             and self._cache_expiration > time.time()
         )
 
@@ -1121,6 +1385,7 @@ class NestClient:
         data = token_store.load(self._token_file)
         if not data:
             return
+        self._auth_mode = str(data.get("auth_mode", "") or "").strip()
         cached_issue_token = str(data.get("issue_token", "") or "").strip()
         if cached_issue_token:
             self._issue_token = cached_issue_token
@@ -1155,26 +1420,47 @@ class NestClient:
         self._google_bearer_expiration = float(data.get("google_bearer_expiration", 0.0) or 0.0)
         self._user = data.get("user", "")
         self._userid = data.get("userid", "")
-        self._cache_expiration = float(data.get("cache_expiration", 0.0))
+        self._nest_user_id = str(data.get("nest_user_id", "") or "")
+        self._cache_expiration = float(data.get("cache_expiration", 0.0) or 0.0)
+
+        # Load home.google.com Foyer & RotateCookies fields
+        self._foyer_cookie_header = str(data.get("foyer_cookie_header", "") or "").strip()
+        self._foyer_api_key = str(data.get("foyer_api_key", "") or "").strip() or DEFAULT_FOYER_API_KEY
+        self._foyer_authuser = str(data.get("foyer_authuser", "") or "").strip() or "0"
+        self._foyer_client_environment = str(data.get("foyer_client_environment", "") or "").strip()
+        self._foyer_user_agent = str(data.get("foyer_user_agent", "") or "").strip()
+        self._rotate_cookies_body = str(data.get("rotate_cookies_body", "") or "").strip()
+        self._rotate_cookies_referer = str(data.get("rotate_cookies_referer", "") or "").strip() or DEFAULT_ROTATE_REFERER
+
+        if not self._auth_mode and self._foyer_cookie_header:
+            self._auth_mode = "home_google"
+
         if self._access_token:
             self._update_auth_headers()
 
     def _save_cache(self) -> None:
         token_store.save(
             {
+                "auth_mode": self._auth_mode,
                 "transport_url": self._transport_url,
                 "access_token": self._access_token,
                 "issue_token": self._issue_token,
                 "google_bearer_token": self._google_bearer_token,
                 # Save self._cookies: the authoritative tracked set (all tracked Google cookies
-                # with rotating ones updated by issueToken responses).  Do NOT use the
-                # jar — the jar may be missing __Host-* cookies that the requests library
-                # fails to store under a domain attribute.
+                # with rotating ones updated by issueToken / RotateCookies responses).
                 "google_cookie_header": self._cookies,
                 "google_bearer_expiration": self._google_bearer_expiration,
                 "user": self._user,
                 "userid": self._userid,
+                "nest_user_id": self._nest_user_id,
                 "cache_expiration": self._cache_expiration,
+                "foyer_cookie_header": self._foyer_cookie_header,
+                "foyer_api_key": self._foyer_api_key,
+                "foyer_authuser": self._foyer_authuser,
+                "foyer_client_environment": self._foyer_client_environment,
+                "foyer_user_agent": self._foyer_user_agent,
+                "rotate_cookies_body": self._rotate_cookies_body,
+                "rotate_cookies_referer": self._rotate_cookies_referer,
             },
             self._token_file,
         )

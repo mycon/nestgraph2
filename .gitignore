@@ -33,6 +33,8 @@ env/
 htmlcov/
 tests/js_dump/*.js
 tests/js_dump/*.txt
+tests/js_dump/*.apk
+tests/js_dump/*.apkm
 
 # Docker volumes
 influxdb-data/

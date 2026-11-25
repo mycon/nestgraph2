@@ -23,8 +23,12 @@
   },
 
   "connect_nest": {
-    "_comment": "Settings for the event stream and token persistence.",
-    "_comment_observe_timeout": "Read timeout for observe stream in seconds. Use 0 to disable read timeout during idle periods.",
+    "_comment": "Settings for data collection and token persistence.",
+    "_comment_data_source": "Data source: 'foyer' (default, Google Home Foyer protobufs; Nest Observe disabled), 'auto' (Observe with Foyer fallback), or 'observe' (legacy Nest Observe only).",
+    "data_source": "foyer",
+    "foyer_poll_interval_sec": 30,
+    "cookie_rotate_interval_sec": 540,
+    "_comment_observe_timeout": "Read timeout for legacy Observe stream in seconds (only used when data_source is 'auto' or 'observe').",
     "observe_timeout_sec": 7200,
     "token_refresh_margin_sec": 290,
     "_comment_token_file": "Path to the JSON file where session tokens are persisted. Inside a container, mount a volume here or point to /app/config/tokens.json.",

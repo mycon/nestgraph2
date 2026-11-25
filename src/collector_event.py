@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Any
 
 import src.config as cfg
+import src.grpc_web as grpc_web
 from src.collector import ThermostatCollector
+from src.foyer_client import FoyerAuthError, FoyerError
 from src.grpc_web import OBSERVE_TRAITS_THERMOSTAT, ObserveAuthError, observe_stream
 from src.influx_writer import InfluxWriter
 from src.nest_client import NestAuthError, NestClient
@@ -110,6 +112,7 @@ class EventThermostatCollector(ThermostatCollector):
             log.warning("Could not pre-populate device_index cache: %s", exc)
 
         token_file = self._resolve_token_file()
+        foyer_only = cfg.CONNECT_NEST_DATA_SOURCE == "foyer"
         self._nest_client = NestClient(
             access_token=cfg.NEST_ACCESS_TOKEN,
             transport_url=cfg.NEST_TRANSPORT_URL,
@@ -118,6 +121,7 @@ class EventThermostatCollector(ThermostatCollector):
             google_bearer_token=cfg.NEST_GOOGLE_BEARER_TOKEN,
             token_file=token_file,
             refresh_margin_sec=cfg.CONNECT_NEST_TOKEN_REFRESH_MARGIN_SEC,
+            foyer_only=foyer_only,
         )
         self._token_refresh_thread = threading.Thread(
             target=self._token_refresh_loop,
@@ -156,7 +160,20 @@ class EventThermostatCollector(ThermostatCollector):
 
     def _token_refresh_loop(self) -> None:
         log.info("Event token refresh loop started")
+        data_source = cfg.CONNECT_NEST_DATA_SOURCE
+        rotate_interval = max(120.0, float(cfg.CONNECT_NEST_COOKIE_ROTATE_INTERVAL_SEC))
         while not self._stop_event.wait(60):
+            # Keep home.google.com cookies alive via RotateCookies (~540s cadence)
+            try:
+                rotated = self._nest_client.rotate_google_cookies(min_interval_sec=rotate_interval)
+                if rotated:
+                    log.info("Event token refresh loop: rotated Google session cookies via RotateCookies")
+            except Exception as exc:
+                log.warning("Event token refresh loop: RotateCookies error: %s", exc)
+
+            if data_source == "foyer":
+                continue
+
             try:
                 refreshed = self._nest_client.refresh_if_needed()
                 if refreshed:
@@ -168,6 +185,13 @@ class EventThermostatCollector(ThermostatCollector):
                         ).isoformat(),
                     )
             except NestAuthError as exc:
+                if data_source == "auto" and self._nest_client.foyer_client is not None:
+                    log.warning(
+                        "Event token refresh loop: Observe JWT refresh failed (%s); "
+                        "Foyer fallback remains available.",
+                        exc,
+                    )
+                    continue
                 log.error("Event token refresh loop: fatal auth error: %s", exc)
                 self.stop()
                 return
@@ -385,15 +409,106 @@ class EventThermostatCollector(ThermostatCollector):
             except Exception as exc:
                 log.error("Error processing device %s: %s", device_id, exc)
 
+    def _build_foyer_device_id_overrides(self) -> dict[str, str]:
+        """Map known room names / thermostat type to canonical DEVICE_... IDs from DB/state."""
+        overrides: dict[str, str] = {}
+        thermostat_ids: list[str] = []
+
+        for device_id, (_dev_idx, device_name, _where_id) in self._last_device_index_written.items():
+            if not device_id.startswith("DEVICE_"):
+                continue
+            if device_name and not device_name.startswith("dev_"):
+                overrides[device_name.strip().lower()] = device_id
+            # Heuristic: single known non-Kryptonite thermostat id from DB or state
+            rt = str(self._state_devices.get(device_id, {}).get("resource_type", ""))
+            if "Thermostat" in rt and device_id not in thermostat_ids:
+                thermostat_ids.append(device_id)
+
+        if cfg.TEST_THERMOSTAT_DEVICE_RESOURCE_ID.startswith("DEVICE_"):
+            if cfg.TEST_THERMOSTAT_DEVICE_RESOURCE_ID not in thermostat_ids:
+                thermostat_ids.append(cfg.TEST_THERMOSTAT_DEVICE_RESOURCE_ID)
+
+        if len(thermostat_ids) == 1:
+            overrides["action.devices.types.THERMOSTAT"] = thermostat_ids[0]
+        return overrides
+
+    def _ingest_snapshot(self, snapshot: dict[str, Any]) -> None:
+        if self._verbose_observe_decoded:
+            log.info("observe decoded snapshot: %s", json.dumps(snapshot, sort_keys=True, default=str))
+        self._update_where_name_cache_from_snapshot(snapshot)
+        decoded_snapshot = _prune_empty_traits(snapshot)
+        _deep_merge(self._state_devices, decoded_snapshot)
+        epoch = time.time()
+        self._refresh_weather(epoch)
+        self._process_merged_state(epoch)
+
+    def _run_foyer_poll_once(self) -> bool:
+        foyer = self._nest_client.foyer_client
+        if foyer is None:
+            return False
+        overrides = self._build_foyer_device_id_overrides()
+        snapshot = foyer.poll_observe_compatible_snapshot(device_id_overrides=overrides)
+        if snapshot:
+            grpc_web.last_stream_activity_ts = time.time()
+            self._ingest_snapshot(snapshot)
+            return True
+        return False
+
     def run_forever(self) -> None:
         fatal_auth_error: NestAuthError | None = None
+        data_source = cfg.CONNECT_NEST_DATA_SOURCE
+        foyer_poll_interval = max(5.0, float(cfg.CONNECT_NEST_FOYER_POLL_INTERVAL_SEC))
+        log.info(
+            "Collector loop starting (data_source=%s, foyer_poll_interval=%.0fs)",
+            data_source,
+            foyer_poll_interval,
+        )
+        consecutive_observe_failures = 0
+        foyer_fallback_until = 0.0
+
         while self._running:
+            use_foyer = (
+                data_source == "foyer"
+                or (
+                    data_source == "auto"
+                    and self._nest_client.foyer_client is not None
+                    and (
+                        not self._nest_client.transport_auth_token
+                        or time.time() < foyer_fallback_until
+                    )
+                )
+            )
+
+            if use_foyer:
+                try:
+                    self._run_foyer_poll_once()
+                    if self._stop_event.wait(foyer_poll_interval):
+                        break
+                except FoyerAuthError as exc:
+                    log.error("Foyer auth error: %s", exc)
+                    fatal_auth_error = NestAuthError(str(exc))
+                    self.stop()
+                    break
+                except (FoyerError, Exception) as exc:
+                    log.warning("Foyer poll error: %s", exc)
+                    if self._stop_event.wait(min(30.0, foyer_poll_interval)):
+                        break
+                continue
+
             try:
                 self._nest_client.refresh_if_needed()
                 jwt = self._nest_client.transport_auth_token
+                if not jwt:
+                    if data_source == "auto" and self._nest_client.foyer_client is not None:
+                        log.warning("No Observe JWT available; switching to Google Home Foyer polling fallback for 30m")
+                        foyer_fallback_until = time.time() + 1800.0
+                        continue
+                    raise NestAuthError("No Observe JWT available and Foyer fallback is not configured")
+
                 auth_snapshot = self._nest_client.auth_debug_snapshot()
                 log.debug("Observe connect auth snapshot: %s", auth_snapshot)
 
+                saw_frame = False
                 for snapshot in observe_stream(
                     OBSERVE_TRAITS_THERMOSTAT,
                     jwt,
@@ -401,16 +516,25 @@ class EventThermostatCollector(ThermostatCollector):
                 ):
                     if not self._running:
                         break
+                    saw_frame = True
+                    consecutive_observe_failures = 0
+                    self._ingest_snapshot(snapshot)
 
-                    if self._verbose_observe_decoded:
-                        log.info("observe decoded snapshot: %s", json.dumps(snapshot, sort_keys=True, default=str))
-
-                    self._update_where_name_cache_from_snapshot(snapshot)
-                    decoded_snapshot = _prune_empty_traits(snapshot)
-                    _deep_merge(self._state_devices, decoded_snapshot)
-                    epoch = time.time()
-                    self._refresh_weather(epoch)
-                    self._process_merged_state(epoch)
+                if not saw_frame:
+                    consecutive_observe_failures += 1
+                    if (
+                        data_source == "auto"
+                        and self._nest_client.foyer_client is not None
+                        and consecutive_observe_failures >= 3
+                    ):
+                        log.warning(
+                            "Observe stream yielded no frames after %d attempts; "
+                            "switching to Google Home Foyer polling fallback for 30m",
+                            consecutive_observe_failures,
+                        )
+                        foyer_fallback_until = time.time() + 1800.0
+                        consecutive_observe_failures = 0
+                        continue
 
                 if self._running:
                     time.sleep(2)
@@ -423,22 +547,43 @@ class EventThermostatCollector(ThermostatCollector):
                 )
                 try:
                     self._nest_client.refresh_now()
+                    if not self._nest_client.transport_auth_token and data_source == "auto" and self._nest_client.foyer_client is not None:
+                        log.warning("Observe JWT unavailable after refresh; switching to Foyer fallback for 30m")
+                        foyer_fallback_until = time.time() + 1800.0
                 except NestAuthError as refresh_exc:
-                    log.error("Forced token refresh failed with fatal auth error: %s", refresh_exc)
-                    fatal_auth_error = refresh_exc
-                    self.stop()
-                    break
+                    if data_source == "auto" and self._nest_client.foyer_client is not None:
+                        log.warning("Observe JWT refresh failed (%s); switching to Foyer fallback for 30m", refresh_exc)
+                        foyer_fallback_until = time.time() + 1800.0
+                    else:
+                        log.error("Forced token refresh failed with fatal auth error: %s", refresh_exc)
+                        fatal_auth_error = refresh_exc
+                        self.stop()
+                        break
                 except Exception as refresh_exc:
                     log.error("Forced token refresh failed: %s", refresh_exc)
                     time.sleep(10)
             except NestAuthError as exc:
+                if data_source == "auto" and self._nest_client.foyer_client is not None:
+                    log.warning("Observe NestAuthError (%s); switching to Foyer fallback for 30m", exc)
+                    foyer_fallback_until = time.time() + 1800.0
+                    continue
                 log.error("Nest auth error: %s", exc)
                 fatal_auth_error = exc
                 self.stop()
                 break
             except Exception as exc:
+                consecutive_observe_failures += 1
                 log.warning("Observe loop error: %s", exc)
-                time.sleep(5)
+                if (
+                    data_source == "auto"
+                    and self._nest_client.foyer_client is not None
+                    and consecutive_observe_failures >= 3
+                ):
+                    log.warning("Observe failed %d times; switching to Foyer fallback for 30m", consecutive_observe_failures)
+                    foyer_fallback_until = time.time() + 1800.0
+                    consecutive_observe_failures = 0
+                else:
+                    time.sleep(5)
 
         log.info("Event collector stopped")
         if fatal_auth_error is not None:
